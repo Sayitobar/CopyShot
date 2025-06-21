@@ -14,7 +14,7 @@ class OverlayWindow: NSWindow {
     
     // We override this to allow the window to receive keyboard and mouse events.
     override var canBecomeKey: Bool {
-        return true
+        return false
     }
     
     // We add this override to allow the window to be the main window of the application.
