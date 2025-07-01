@@ -96,7 +96,7 @@ class OCRService {
         request.usesLanguageCorrection = settings.usesLanguageCorrection
         
         // We still specify the language to help the engine.
-        request.recognitionLanguages = ["en-US"]
+        request.recognitionLanguages = settings.recognitionLanguages
         
         // --- End of new code ---
         

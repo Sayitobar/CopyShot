@@ -6,85 +6,169 @@
 //
 
 import Foundation
-import Carbon // We need this for the low-level C-based Hotkey APIs
+import Carbon
 
-// A clean way to define a custom notification name.
-// This helps us broadcast that the hotkey was pressed without tightly coupling our code.
+// Custom notification names for different hotkey actions
 extension Notification.Name {
-    static let hotkeyWasPressed = Notification.Name("hotkeyWasPressed")
+    static let captureHotkeyPressed = Notification.Name("captureHotkeyPressed")
+    static let settingsHotkeyPressed = Notification.Name("settingsHotkeyPressed")
 }
 
-// This is the C-function that the OS will call when our hotkey is pressed.
-// It acts as a bridge from the C world to our Swift class.
+// C-function bridge for hotkey handling
 private func hotKeyHandler(callRef: EventHandlerCallRef?, eventRef: EventRef?, userData: UnsafeMutableRawPointer?) -> OSStatus {
     if let userData = userData {
         let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
-        manager.handleHotkey()
+        manager.handleHotkey(eventRef: eventRef)
     }
-    return noErr // Tell the OS we handled the event
+    return noErr
 }
-// You must mark it with @convention(c) to make it passable as a C function pointer
+
 private let hotKeyHandlerCallback: EventHandlerUPP = { (callRef, eventRef, userData) -> OSStatus in
-    // Call into the Swift method using a bridge function
     return hotKeyHandler(callRef: callRef, eventRef: eventRef, userData: userData)
 }
 
-class HotkeyManager {
-    // Singleton pattern: We only want one instance of this manager for the whole app.
+class HotkeyManager: ObservableObject {
     static let shared = HotkeyManager()
-
-    private var hotKeyRef: EventHotKeyRef?
-
-    private init() {} // Private initializer to enforce the singleton pattern.
-
-    func register() {
-        // 1. Define the Hotkey Signature
-        // We need a unique ID for our hotkey. 'htk1' is just a unique 4-character code.
-        let hotKeyID = EventHotKeyID(signature: "htk1".fourCharKode, id: 1)
-
-        // 2. Define the Key Combination
-        // kVK_ANSI_T is the key code for the 'T' key.
-        // cmdKey and shiftKey are modifier flags.
-        let keyCode = UInt32(kVK_ANSI_T)
-        let modifiers = UInt32(cmdKey | shiftKey)
-
-        // 3. Register the Hotkey with the System
-        // This is the core C-function call.
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: OSType(kEventHotKeyPressed))
-        
-        // We pass 'self' (our HotkeyManager instance) as user data.
-        // This is how the C handler knows which Swift object to talk to.
-        let selfPtr = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-
-        let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
-
-        // Check if registration was successful
-        guard status == noErr else {
-            print("Error: Unable to register hotkey")
-            return
-        }
-
-        // 4. Tell the system which function to call when the hotkey is pressed.
-        let handlerStatus = InstallEventHandler(GetApplicationEventTarget(), hotKeyHandlerCallback, 1, &eventType, selfPtr, nil)
-        
-        guard handlerStatus == noErr else {
-            print("Error: Unable to install hotkey handler")
-            return
-        }
-        
-        print("Hotkey registered successfully: Command+Shift+T")
+    
+    private var captureHotkeyRef: EventHotKeyRef?
+    private var settingsHotkeyRef: EventHotKeyRef?
+    private var isEventHandlerInstalled = false
+    
+    private init() {
+        // Listen for settings changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(hotkeySettingsChanged),
+            name: NSNotification.Name("HotkeySettingsChanged"),
+            object: nil
+        )
     }
-
-    // This is the Swift method called by our C bridge function.
-    func handleHotkey() {
-        print("Hotkey pressed!")
-        // Broadcast the notification to anyone in the app who is listening.
-        NotificationCenter.default.post(name: .hotkeyWasPressed, object: nil)
-        print("HotkeyManager: Notification .hotkeyWasPressed POSTED.")
+    
+    deinit {
+        unregisterAllHotkeys()
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    func registerHotkeys() {
+        let settings = SettingsManager.shared
+        
+        // Unregister existing hotkeys first
+        unregisterAllHotkeys()
+        
+        // Install event handler if not already installed
+        if !isEventHandlerInstalled {
+            installEventHandler()
+        }
+        
+        // Register capture hotkey
+        registerHotkey(
+            config: settings.captureHotkey,
+            id: 1,
+            hotkeyRef: &captureHotkeyRef
+        )
+        
+        // Register settings hotkey
+        registerHotkey(
+            config: settings.settingsHotkey,
+            id: 2,
+            hotkeyRef: &settingsHotkeyRef
+        )
+    }
+    
+    private func registerHotkey(config: HotkeyConfig, id: UInt32, hotkeyRef: inout EventHotKeyRef?) {
+        let hotKeyID = EventHotKeyID(signature: "htk1".fourCharKode, id: id)
+        
+        let status = RegisterEventHotKey(
+            UInt32(config.keyCode),
+            config.modifierFlags,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotkeyRef
+        )
+        
+        if status != noErr {
+            print("Error registering hotkey \(config.displayString): \(status)")
+        } else {
+            print("Successfully registered hotkey: \(config.displayString)")
+        }
+    }
+    
+    private func installEventHandler() {
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: OSType(kEventHotKeyPressed)
+        )
+        
+        let selfPtr = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        
+        let status = InstallEventHandler(
+            GetApplicationEventTarget(),
+            hotKeyHandlerCallback,
+            1,
+            &eventType,
+            selfPtr,
+            nil
+        )
+        
+        if status == noErr {
+            isEventHandlerInstalled = true
+            print("Event handler installed successfully")
+        } else {
+            print("Error installing event handler: \(status)")
+        }
+    }
+    
+    func handleHotkey(eventRef: EventRef?) {
+        guard let eventRef = eventRef else { return }
+        
+        var hotKeyID = EventHotKeyID()
+        let status = GetEventParameter(
+            eventRef,
+            OSType(kEventParamDirectObject),
+            OSType(typeEventHotKeyID),
+            nil,
+            MemoryLayout<EventHotKeyID>.size,
+            nil,
+            &hotKeyID
+        )
+        
+        guard status == noErr else {
+            print("Error getting hotkey ID: \(status)")
+            return
+        }
+        
+        // Determine which hotkey was pressed based on ID
+        switch hotKeyID.id {
+        case 1: // Capture hotkey
+            print("Capture hotkey pressed!")
+            NotificationCenter.default.post(name: .captureHotkeyPressed, object: nil)
+        case 2: // Settings hotkey
+            print("Settings hotkey pressed!")
+            NotificationCenter.default.post(name: .settingsHotkeyPressed, object: nil)
+        default:
+            print("Unknown hotkey pressed with ID: \(hotKeyID.id)")
+        }
+    }
+    
+    private func unregisterAllHotkeys() {
+        if let captureRef = captureHotkeyRef {
+            UnregisterEventHotKey(captureRef)
+            captureHotkeyRef = nil
+        }
+        
+        if let settingsRef = settingsHotkeyRef {
+            UnregisterEventHotKey(settingsRef)
+            settingsHotkeyRef = nil
+        }
+    }
+    
+    @objc private func hotkeySettingsChanged() {
+        // Re-register hotkeys when settings change
+        registerHotkeys()
     }
 }
 
-// Helper extension to make the fourCharKode conversion easier to read.
 extension String {
     var fourCharKode: FourCharCode {
         return self.utf16.reduce(0, {$0 << 8 + FourCharCode($1)})

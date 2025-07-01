@@ -8,39 +8,404 @@
 import SwiftUI
 
 struct SettingsView: View {
-    // Access the SettingsManager from the environment.
     @EnvironmentObject var settings: SettingsManager
+    @State private var selectedLanguage: String = ""
     
     var body: some View {
-        // Form provides standard styling for settings panes.
-        Form {
-            // Section for OCR settings
-            Section(header: Text("OCR Settings")) {
-                
-                // Picker for Recognition Level
-                Picker("Accuracy", selection: $settings.recognitionLevel) {
-                    // We iterate over all cases of our RecognitionLevel enum.
-                    ForEach(RecognitionLevel.allCases) { level in
-                        Text(level.description).tag(level)
+        VStack(spacing: 0) {
+            // Header
+            VStack(spacing: 6) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(.blue.gradient)
+                Text("Settings")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+            }
+            .padding(.top, 16)
+            .padding(.bottom, 20)
+            
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    // Hotkey Settings Card
+                    SettingsCard(title: "Hotkeys", icon: "keyboard") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            // Capture Hotkey
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Image(systemName: "camera.viewfinder")
+                                        .foregroundColor(.blue)
+                                        .frame(width: 14)
+                                    Text("Capture Screenshot")
+                                        .fontWeight(.medium)
+                                        .font(.system(size: 14))
+                                    Spacer()
+                                }
+                                
+                                HotkeyField(
+                                    hotkey: $settings.captureHotkey,
+                                    placeholder: "Click to set hotkey"
+                                )
+                                .padding(.leading, 22)
+                            }
+                            
+                            Divider()
+                                .padding(.horizontal, -4)
+                            
+                            // Settings Hotkey
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Image(systemName: "gearshape")
+                                        .foregroundColor(.green)
+                                        .frame(width: 14)
+                                    Text("Open Settings")
+                                        .fontWeight(.medium)
+                                        .font(.system(size: 14))
+                                    Spacer()
+                                }
+                                
+                                HotkeyField(
+                                    hotkey: $settings.settingsHotkey,
+                                    placeholder: "Click to set hotkey"
+                                )
+                                .padding(.leading, 22)
+                            }
+                            
+                            Divider()
+                                .padding(.horizontal, -4)
+                            
+                            // Reset Button
+                            HStack {
+                                Button("Reset to Defaults") {
+                                    settings.resetHotkeysToDefaults()
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundColor(.blue)
+                                .font(.system(size: 13))
+                                Spacer()
+                            }
+                            .padding(.leading, 22)
+                        }
+                    }
+                    
+                    // OCR Settings Card
+                    SettingsCard(title: "OCR Settings", icon: "textformat") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            // Recognition Level
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Image(systemName: "speedometer")
+                                        .foregroundColor(.blue)
+                                        .frame(width: 14)
+                                    Text("Recognition Speed")
+                                        .fontWeight(.medium)
+                                        .font(.system(size: 14))
+                                    Spacer()
+                                }
+                                
+                                Picker("Accuracy", selection: $settings.recognitionLevel) {
+                                    ForEach(RecognitionLevel.allCases) { level in
+                                        Text(level.description).tag(level)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                .padding(.leading, 22)
+                            }
+                            
+                            Divider()
+                                .padding(.horizontal, -4)
+                            
+                            // Language Correction
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Image(systemName: "checkmark.circle")
+                                        .foregroundColor(.green)
+                                        .frame(width: 14)
+                                    Text("Language Correction")
+                                        .fontWeight(.medium)
+                                        .font(.system(size: 14))
+                                    Spacer()
+                                }
+                                
+                                HStack {
+                                    Toggle("Use Language Correction", isOn: $settings.usesLanguageCorrection)
+                                        .toggleStyle(.switch)
+                                        .padding(.leading, 22)
+                                    Spacer()
+                                }
+                                
+                                Text("This may interfere with code or technical symbols.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.leading, 22)
+                                    .padding(.top, 2)
+                            }
+                        }
+                    }
+                    
+                    // Languages Card
+                    SettingsCard(title: "Recognition Languages", icon: "globe") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            // Add Language Section
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Image(systemName: "plus.circle.fill")
+                                        .foregroundColor(.blue)
+                                        .frame(width: 14)
+                                    Text("Add Language")
+                                        .fontWeight(.medium)
+                                        .font(.system(size: 14))
+                                    Spacer()
+                                }
+                                
+                                Menu {
+                                    ForEach(availableLanguages, id: \.self) { language in
+                                        Button(action: {
+                                            addLanguage(language)
+                                        }) {
+                                            Text(Locale.current.localizedString(forIdentifier: language) ?? language)
+                                        }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(availableLanguages.isEmpty ? "All languages added" : "Select a language to add...")
+                                            .foregroundColor(availableLanguages.isEmpty ? .secondary : .primary)
+                                            .font(.system(size: 13))
+                                        Spacer()
+                                        Image(systemName: "chevron.down")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Color(.controlBackgroundColor))
+                                    .cornerRadius(5)
+                                }
+                                .disabled(availableLanguages.isEmpty)
+                                .buttonStyle(.plain)
+                                .padding(.leading, 22)
+                            }
+                            
+                            if !settings.recognitionLanguages.isEmpty {
+                                Divider()
+                                    .padding(.horizontal, -4)
+                                
+                                // Selected Languages
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Image(systemName: "list.bullet")
+                                            .foregroundColor(.orange)
+                                            .frame(width: 14)
+                                        Text("Selected Languages")
+                                            .fontWeight(.medium)
+                                            .font(.system(size: 14))
+                                        Spacer()
+                                    }
+                                    
+                                    VStack(spacing: 4) {
+                                        ForEach(settings.recognitionLanguages, id: \.self) { language in
+                                            LanguageRow(
+                                                language: language,
+                                                canRemove: settings.recognitionLanguages.count > 1
+                                            ) {
+                                                removeLanguage(language)
+                                            }
+                                        }
+                                    }
+                                    .padding(.leading, 22)
+                                }
+                            }
+                            
+                            Text("Select languages to recognize. Multiple languages can improve detection accuracy.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.leading)
+                                .padding(.top, 4)
+                        }
                     }
                 }
-                .pickerStyle(.segmented) // A nice compact style
-                
-                // Toggle for Language Correction
-                Toggle("Use Language Correction", isOn: $settings.usesLanguageCorrection)
-                    .toggleStyle(.switch)
-                
-                Text("This mostly interferes with code or technical symbols.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 18)
             }
         }
-        .padding(20)
-        .frame(width: 350, height: 150) // Give the window a nice default size
+        .frame(width: 440, height: 580)
+        .background(Color(.windowBackgroundColor))
+        .onAppear {
+            if settings.recognitionLanguages.isEmpty {
+                settings.recognitionLanguages = ["en-US"]
+            }
+        }
+    }
+    
+    private var availableLanguages: [String] {
+        settings.supportedLanguages.filter { !settings.recognitionLanguages.contains($0) }
+    }
+    
+    private func addLanguage(_ language: String) {
+        if !settings.recognitionLanguages.contains(language) {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                settings.recognitionLanguages.append(language)
+            }
+        }
+    }
+    
+    private func removeLanguage(_ language: String) {
+        if settings.recognitionLanguages.count > 1 {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                settings.recognitionLanguages.removeAll { $0 == language }
+            }
+        }
     }
 }
 
-// A preview provider for designing the view in Xcode's canvas
+struct HotkeyField: View {
+    @Binding var hotkey: HotkeyConfig
+    let placeholder: String
+    @State private var isCapturing = false
+    @State private var tempKeyCode: UInt16?
+    @State private var tempModifiers: UInt32?
+    
+    var body: some View {
+        Button(action: {
+            startCapturing()
+        }) {
+            HStack {
+                Text(isCapturing ? "Press keys..." : hotkey.displayString)
+                    .foregroundColor(isCapturing ? .orange : .primary)
+                    .font(.system(size: 13))
+                    .monospaced()
+                Spacer()
+                if isCapturing {
+                    Button("Cancel") {
+                        stopCapturing()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.secondary)
+                    .font(.caption)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color(.controlBackgroundColor))
+            .cornerRadius(5)
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(isCapturing ? Color.orange : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onReceive(NotificationCenter.default.publisher(for: .init("KeyCaptured"))) {
+            guard isCapturing,
+                  let keyCode = $0.userInfo?["keyCode"] as? UInt16,
+                  let modifiers = $0.userInfo?["modifiers"] as? UInt32
+            else { return }
+            
+            updateHotkey(keyCode: keyCode, modifiers: modifiers)
+        }
+    }
+    
+    private func startCapturing() {
+        isCapturing = true
+        // In a real implementation, you'd start monitoring key events here
+    }
+    
+    private func stopCapturing() {
+        isCapturing = false
+        tempKeyCode = nil
+        tempModifiers = nil
+    }
+    
+    private func updateHotkey(keyCode: UInt16, modifiers: UInt32) {
+        let displayString = SettingsManager.displayString(for: keyCode, modifierFlags: modifiers)
+        let newHotkey = HotkeyConfig(
+            keyCode: keyCode,
+            modifierFlags: modifiers,
+            displayString: displayString
+        )
+        
+        // Check if hotkey is already in use
+        if !SettingsManager.shared.isHotkeyInUse(newHotkey) {
+            hotkey = newHotkey
+            // Notify HotkeyManager to re-register hotkeys
+            NotificationCenter.default.post(name: NSNotification.Name("HotkeySettingsChanged"), object: nil)
+        }
+        
+        stopCapturing()
+    }
+}
+
+// Keep existing structs: SettingsCard, LanguageRow, SettingsView_Previews
+struct SettingsCard<Content: View>: View {
+    let title: String
+    let icon: String
+    let content: Content
+    
+    init(title: String, icon: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.icon = icon
+        self.content = content()
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.blue.gradient)
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                Spacer()
+            }
+            
+            content
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color(.controlBackgroundColor))
+        .cornerRadius(10)
+        .shadow(color: .black.opacity(0.04), radius: 1, x: 0, y: 0.5)
+    }
+}
+
+struct LanguageRow: View {
+    let language: String
+    let canRemove: Bool
+    let onRemove: () -> Void
+    
+    var body: some View {
+        HStack {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(.blue.gradient)
+                    .frame(width: 5, height: 5)
+                Text(Locale.current.localizedString(forIdentifier: language) ?? language)
+                    .font(.system(size: 13))
+            }
+            
+            Spacer()
+            
+            if canRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .opacity(0.7)
+            } else {
+                Image(systemName: "lock.circle.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+                    .opacity(0.5)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(.selectedControlColor).opacity(0.08))
+        .cornerRadius(6)
+    }
+}
+
 struct SettingsView_Previews: PreviewProvider {
     static var previews: some View {
         SettingsView()
