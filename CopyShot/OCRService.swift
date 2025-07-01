@@ -84,9 +84,21 @@ class OCRService {
             }
         }
         
-        request.recognitionLevel = .accurate
+        // --- Read configuration from SettingsManager ---
+            
+        // Get the shared instance of our settings.
+        let settings = SettingsManager.shared
+        
+        // Set the recognition level based on the user's setting.
+        request.recognitionLevel = (settings.recognitionLevel == .accurate) ? .accurate : .fast
+        
+        // Set the language correction based on the user's setting.
+        request.usesLanguageCorrection = settings.usesLanguageCorrection
+        
+        // We still specify the language to help the engine.
         request.recognitionLanguages = ["en-US"]
-        request.usesLanguageCorrection = false  // Keep this on for natural language
+        
+        // --- End of new code ---
         
         DispatchQueue.global(qos: .userInitiated).async {
             do {

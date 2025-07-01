@@ -69,11 +69,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// The rest of the file remains the same
+
 @main
 struct CopyShotApp: App {
+    // Keep the AppDelegate to manage the hotkey and background tasks.
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
+    // We need to access our settings to pass them to the SettingsView.
+    @StateObject private var settings = SettingsManager.shared
+
     var body: some Scene {
-        Settings { }
+        // This is the primary scene for a Menu Bar app.
+        MenuBarExtra("CopyShot", systemImage: "text.viewfinder") {
+            
+            // This is the content of the menu that appears when you click the icon.
+            
+            Button("Capture Text") {
+                // Manually trigger the capture flow.
+                appDelegate.hotkeyDidFire()
+            }
+            
+            Divider()
+            
+            // This special button automatically opens our Settings scene.
+            SettingsLink()
+            
+            Divider()
+            
+            Button("Quit CopyShot") {
+                NSApplication.shared.terminate(nil)
+            }
+            
+        }
+        
+        // This defines the window that opens when the user clicks the SettingsLink.
+        // It's a separate, secondary scene.
+        Settings {
+            SettingsView()
+                .environmentObject(settings) // Pass the settings manager to the view
+        }
     }
 }
