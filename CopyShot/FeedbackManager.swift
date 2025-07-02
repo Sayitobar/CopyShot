@@ -8,36 +8,33 @@
 import Foundation
 import UserNotifications
 import AppKit // For NSSound
+import SwiftUI // For Color
 
 class FeedbackManager {
     
+    static let shared = FeedbackManager()
+    let presenter = NotificationPresenter()
+    
+    private init() {}
+    
     // A simple, static function to show the "Text Copied" notification.
-    static func showNotification(title: String, body: String) {
-        let center = UNUserNotificationCenter.current()
+    static func showNotification(title: String, subtitle: String? = nil, body: String, iconName: String, accentColor: Color, soundName: String? = nil) {
+        shared.presenter.showNotification(
+            title: title,
+            subtitle: subtitle,
+            body: body,
+            iconName: iconName,
+            accentColor: accentColor
+        )
         
-        // Check if we have permission before trying to send.
-        center.getNotificationSettings { settings in
-            guard settings.authorizationStatus == .authorized else { return }
-            
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            
-            // We can add a sound to the notification itself.
-            // .default is a subtle, standard sound.
-            content.sound = UNNotificationSound.default
-            
-            // Create the request. A nil trigger sends it immediately.
-            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            
-            // Add the request to the notification center.
-            center.add(request)
+        // Play sound directly
+        if let soundName = soundName {
+            NSSound(named: soundName)?.play()
         }
     }
     
     // A simple, static function to play the screenshot sound.
-    // We will make this optional in the future.
     static func playSuccessSound() {
-        NSSound(named: "Tink")?.play()
+        NSSound(named: "Pop")?.play() // Changed to a less intrusive sound
     }
 }

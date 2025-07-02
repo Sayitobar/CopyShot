@@ -118,6 +118,34 @@ struct SettingsView: View {
                         }
                     }
                     
+                    // Notification Settings Card
+                    SettingsCard(title: "Notification Settings", icon: "bell.fill") {
+                        VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Image(systemName: "text.alignleft")
+                                        .foregroundColor(.purple)
+                                        .frame(width: 14)
+                                    Text("Text Preview Limit")
+                                        .fontWeight(.medium)
+                                        .font(.system(size: 14))
+                                    Spacer()
+                                }
+                                
+                                TextField("Character Limit", value: $settings.textPreviewLimit, formatter: NumberFormatter())
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 80)
+                                    .padding(.leading, 22)
+                                
+                                Text("Maximum characters to show in the notification preview. Set to 0 for full text.")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.leading, 22)
+                                    .padding(.top, 2)
+                            }
+                        }
+                    }
+                    
                     // Languages Card
                     SettingsCard(title: "Recognition Languages", icon: "globe") {
                         VStack(alignment: .leading, spacing: 14) {

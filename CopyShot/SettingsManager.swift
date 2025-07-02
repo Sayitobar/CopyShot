@@ -16,7 +16,7 @@ enum SettingsKeys {
     static let usesLanguageCorrection = "usesLanguageCorrection"
     static let recognitionLanguages = "recognitionLanguages"
     static let captureHotkey = "captureHotkey"
-    static let settingsHotkey = "settingsHotkey"
+    static let textPreviewLimit = "textPreviewLimit"
 }
 
 // Using an enum for the recognition level makes our code safer and clearer.
@@ -51,12 +51,6 @@ struct HotkeyConfig: Codable, Equatable {
         modifierFlags: UInt32(cmdKey | shiftKey),
         displayString: "⌘⇧C"
     )
-    
-    static let defaultSettings = HotkeyConfig(
-        keyCode: UInt16(kVK_ANSI_Comma),
-        modifierFlags: UInt32(cmdKey),
-        displayString: "⌘,"
-    )
 }
 
 class SettingsManager: ObservableObject {
@@ -88,9 +82,9 @@ class SettingsManager: ObservableObject {
         }
     }
     
-    @Published var settingsHotkey: HotkeyConfig {
+    @Published var textPreviewLimit: Int {
         didSet {
-            saveHotkey(settingsHotkey, forKey: SettingsKeys.settingsHotkey)
+            UserDefaults.standard.set(textPreviewLimit, forKey: SettingsKeys.textPreviewLimit)
         }
     }
     
@@ -101,7 +95,8 @@ class SettingsManager: ObservableObject {
         
         if UserDefaults.standard.object(forKey: SettingsKeys.usesLanguageCorrection) == nil {
             self.usesLanguageCorrection = false
-        } else {
+        }
+        else {
             self.usesLanguageCorrection = UserDefaults.standard.bool(forKey: SettingsKeys.usesLanguageCorrection)
         }
         
@@ -109,16 +104,13 @@ class SettingsManager: ObservableObject {
         
         // Initialize hotkeys with defaults first
         self.captureHotkey = HotkeyConfig.defaultCapture
-        self.settingsHotkey = HotkeyConfig.defaultSettings
         
         // Then load saved values if they exist
         if let savedCaptureHotkey = Self.loadHotkey(forKey: SettingsKeys.captureHotkey) {
             self.captureHotkey = savedCaptureHotkey
         }
         
-        if let savedSettingsHotkey = Self.loadHotkey(forKey: SettingsKeys.settingsHotkey) {
-            self.settingsHotkey = savedSettingsHotkey
-        }
+        self.textPreviewLimit = UserDefaults.standard.integer(forKey: SettingsKeys.textPreviewLimit) == 0 ? 50 : UserDefaults.standard.integer(forKey: SettingsKeys.textPreviewLimit)
     }
     
     // Helper property to get available languages from Vision
@@ -150,12 +142,11 @@ class SettingsManager: ObservableObject {
     // Reset hotkeys to defaults
     func resetHotkeysToDefaults() {
         captureHotkey = HotkeyConfig.defaultCapture
-        settingsHotkey = HotkeyConfig.defaultSettings
     }
     
     // Check if hotkey is already in use
     func isHotkeyInUse(_ hotkey: HotkeyConfig) -> Bool {
-        return hotkey == captureHotkey || hotkey == settingsHotkey
+        return hotkey == captureHotkey
     }
     
     // Convert NSEvent modifier flags to Carbon flags

@@ -31,7 +31,6 @@ class HotkeyManager: ObservableObject {
     static let shared = HotkeyManager()
     
     private var captureHotkeyRef: EventHotKeyRef?
-    private var settingsHotkeyRef: EventHotKeyRef?
     private var isEventHandlerInstalled = false
     
     private init() {
@@ -65,13 +64,6 @@ class HotkeyManager: ObservableObject {
             config: settings.captureHotkey,
             id: 1,
             hotkeyRef: &captureHotkeyRef
-        )
-        
-        // Register settings hotkey
-        registerHotkey(
-            config: settings.settingsHotkey,
-            id: 2,
-            hotkeyRef: &settingsHotkeyRef
         )
     }
     
@@ -143,9 +135,6 @@ class HotkeyManager: ObservableObject {
         case 1: // Capture hotkey
             print("Capture hotkey pressed!")
             NotificationCenter.default.post(name: .captureHotkeyPressed, object: nil)
-        case 2: // Settings hotkey
-            print("Settings hotkey pressed!")
-            NotificationCenter.default.post(name: .settingsHotkeyPressed, object: nil)
         default:
             print("Unknown hotkey pressed with ID: \(hotKeyID.id)")
         }
@@ -155,11 +144,6 @@ class HotkeyManager: ObservableObject {
         if let captureRef = captureHotkeyRef {
             UnregisterEventHotKey(captureRef)
             captureHotkeyRef = nil
-        }
-        
-        if let settingsRef = settingsHotkeyRef {
-            UnregisterEventHotKey(settingsRef)
-            settingsHotkeyRef = nil
         }
     }
     

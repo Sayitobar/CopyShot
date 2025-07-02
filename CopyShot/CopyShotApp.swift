@@ -21,8 +21,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("--- App is ready. Setting up services. ---")
         
-        requestNotificationPermission()
-        UNUserNotificationCenter.current().delegate = self
+        // No longer requesting UNNotification permission as we are using custom notifications.
+        // UNUserNotificationCenter.current().delegate = self
         
         // 1. Set up the completion handler ONCE.
         // This is now safe because both the AppDelegate and the captureManager
@@ -32,6 +32,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             
             guard let capturedImage = image else {
                 print("Capture was cancelled or failed.")
+                FeedbackManager.showNotification(
+                    title: "Capture Cancelled",
+                    body: "The screen capture was cancelled or failed.",
+                    iconName: "xmark.circle.fill",
+                    accentColor: .gray,
+                    soundName: "Frog" // Custom sound for cancellation
+                )
                 self.resetIcon()
                 return
             }
@@ -47,26 +54,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         print("OCR completed, but no text was found.")
                         FeedbackManager.showNotification(
                             title: "No Text Found",
-                            body: "The selected area did not contain any recognizable text."
+                            body: "The selected area did not contain any recognizable text.",
+                            iconName: "xmark.circle.fill",
+                            accentColor: .red,
+                            soundName: "Bottle" // Custom sound for no text found
                         )
                         self.resetIcon()
                     } else {
                         print("Successfully recognized text. Copying to clipboard.")
                         ClipboardManager.copyToClipboard(text: recognizedText)
                         
+                        let previewText: String
+                        if SettingsManager.shared.textPreviewLimit > 0 && recognizedText.count > SettingsManager.shared.textPreviewLimit {
+                            previewText = String(recognizedText.prefix(SettingsManager.shared.textPreviewLimit)) + "..."
+                        } else {
+                            previewText = recognizedText
+                        }
+                        
                         FeedbackManager.showNotification(
                             title: "Text Copied",
-                            body: "The recognized text has been copied to your clipboard."
+                            subtitle: previewText,
+                            body: "The recognized text has been copied to your clipboard.",
+                            iconName: "checkmark.circle.fill",
+                            accentColor: .green,
+                            soundName: "Funk"
                         )
-                        // Also play the sound on success.
-                        FeedbackManager.playSuccessSound()
                         self.setSuccessIcon()
                     }
                 case .failure(let error):
                     print("OCR failed with error: \(error.localizedDescription)")
                     FeedbackManager.showNotification(
                         title: "OCR Failed",
-                        body: error.localizedDescription
+                        body: error.localizedDescription,
+                        iconName: "exclamationmark.triangle.fill",
+                        accentColor: .orange,
+                        soundName: "Sosumi" // Custom sound for OCR failure
                     )
                     self.resetIcon()
                 }
@@ -84,38 +106,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             object: nil
         )
         
-        // Listen for settings hotkey
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(settingsHotkeyDidFire),
-            name: .settingsHotkeyPressed,
-            object: nil
-        )
-        
         print("--- Setup complete. Waiting for hotkeys. ---")
     }
     
     private func requestNotificationPermission() {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                print("Notification permission error: \(error.localizedDescription)")
-            }
-            if granted {
-                print("Notification permission granted.")
-            } else {
-                print("Notification permission denied.")
-            }
-        }
+        // No longer needed for custom notifications
     }
     
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        
-        // By returning .banner, we tell the system to show the notification
-        // as a banner even if our app is in the foreground.
-        completionHandler([.banner, .sound, .list])
+        // No longer needed for custom notifications
     }
     
     // This function handles the capture hotkey.
@@ -123,18 +124,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         print("--- Capture hotkey fired! Starting capture... ---")
         menuBarIconState = .capturing
         captureManager.startCapture()
-    }
-    
-    // This function handles the settings hotkey.
-    @objc func settingsHotkeyDidFire() {
-        print("--- Settings hotkey fired! Opening settings... ---")
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        NSApp.activate(ignoringOtherApps: true)
-        // Bring the settings window to the front
-        if let window = NSApp.windows.first(where: { $0.title == "CopyShot Settings" }) {
-            window.makeKeyAndOrderFront(nil)
-            window.level = .floating
-        }
     }
     
     private func setSuccessIcon() {
@@ -161,6 +150,7 @@ struct CopyShotApp: App {
     
     // We need to access our settings to pass them to the SettingsView.
     @StateObject private var settings = SettingsManager.shared
+    @StateObject private var notificationPresenter = FeedbackManager.shared.presenter
 
     var body: some Scene {
         // This is the primary scene for a Menu Bar app.
@@ -196,6 +186,7 @@ struct CopyShotApp: App {
         Settings {
             SettingsView()
                 .environmentObject(settings) // Pass the settings manager to the view
+                .frame(width: 380) // Set a fixed width for the settings window
         }
     }
 }
