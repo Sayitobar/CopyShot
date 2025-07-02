@@ -8,6 +8,7 @@
 import Foundation
 import Vision
 import Carbon
+import AppKit // Import for NSEvent
 
 // Define keys for our settings to avoid typos.
 enum SettingsKeys {
@@ -155,6 +156,24 @@ class SettingsManager: ObservableObject {
     // Check if hotkey is already in use
     func isHotkeyInUse(_ hotkey: HotkeyConfig) -> Bool {
         return hotkey == captureHotkey || hotkey == settingsHotkey
+    }
+    
+    // Convert NSEvent modifier flags to Carbon flags
+    static func carbonModifierFlags(from flags: NSEvent.ModifierFlags) -> UInt32 {
+        var carbonFlags: UInt32 = 0
+        if flags.contains(.control) {
+            carbonFlags |= UInt32(controlKey)
+        }
+        if flags.contains(.option) {
+            carbonFlags |= UInt32(optionKey)
+        }
+        if flags.contains(.shift) {
+            carbonFlags |= UInt32(shiftKey)
+        }
+        if flags.contains(.command) {
+            carbonFlags |= UInt32(cmdKey)
+        }
+        return carbonFlags
     }
     
     // Generate display string for modifiers and key

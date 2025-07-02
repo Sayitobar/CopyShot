@@ -60,6 +60,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         
         NSApp.activate(ignoringOtherApps: true)
         overlayWindows.forEach { $0.makeKeyAndOrderFront(nil) }
+        overlayWindows.first?.makeKey()
         NSCursor.hide()
     }
 

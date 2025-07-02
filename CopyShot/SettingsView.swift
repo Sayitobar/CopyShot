@@ -49,31 +49,6 @@ struct SettingsView: View {
                                 .padding(.leading, 22)
                             }
                             
-                            Divider()
-                                .padding(.horizontal, -4)
-                            
-                            // Settings Hotkey
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack {
-                                    Image(systemName: "gearshape")
-                                        .foregroundColor(.green)
-                                        .frame(width: 14)
-                                    Text("Open Settings")
-                                        .fontWeight(.medium)
-                                        .font(.system(size: 14))
-                                    Spacer()
-                                }
-                                
-                                HotkeyField(
-                                    hotkey: $settings.settingsHotkey,
-                                    placeholder: "Click to set hotkey"
-                                )
-                                .padding(.leading, 22)
-                            }
-                            
-                            Divider()
-                                .padding(.horizontal, -4)
-                            
                             // Reset Button
                             HStack {
                                 Button("Reset to Defaults") {
@@ -228,7 +203,6 @@ struct SettingsView: View {
                 .padding(.bottom, 18)
             }
         }
-        .frame(width: 440, height: 580)
         .background(Color(.windowBackgroundColor))
         .onAppear {
             if settings.recognitionLanguages.isEmpty {
@@ -262,12 +236,15 @@ struct HotkeyField: View {
     @Binding var hotkey: HotkeyConfig
     let placeholder: String
     @State private var isCapturing = false
-    @State private var tempKeyCode: UInt16?
-    @State private var tempModifiers: UInt32?
+    @State private var eventMonitor: Any?
     
     var body: some View {
         Button(action: {
-            startCapturing()
+            if isCapturing {
+                stopCapturing()
+            } else {
+                startCapturing()
+            }
         }) {
             HStack {
                 Text(isCapturing ? "Press keys..." : hotkey.displayString)
@@ -294,39 +271,36 @@ struct HotkeyField: View {
             )
         }
         .buttonStyle(.plain)
-        .onReceive(NotificationCenter.default.publisher(for: .init("KeyCaptured"))) {
-            guard isCapturing,
-                  let keyCode = $0.userInfo?["keyCode"] as? UInt16,
-                  let modifiers = $0.userInfo?["modifiers"] as? UInt32
-            else { return }
-            
-            updateHotkey(keyCode: keyCode, modifiers: modifiers)
-        }
     }
     
     private func startCapturing() {
         isCapturing = true
-        // In a real implementation, you'd start monitoring key events here
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            updateHotkey(with: event)
+            return nil // Consume the event
+        }
     }
     
     private func stopCapturing() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
         isCapturing = false
-        tempKeyCode = nil
-        tempModifiers = nil
     }
     
-    private func updateHotkey(keyCode: UInt16, modifiers: UInt32) {
-        let displayString = SettingsManager.displayString(for: keyCode, modifierFlags: modifiers)
+    private func updateHotkey(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let carbonModifiers = SettingsManager.carbonModifierFlags(from: modifiers)
+        
         let newHotkey = HotkeyConfig(
-            keyCode: keyCode,
-            modifierFlags: modifiers,
-            displayString: displayString
+            keyCode: event.keyCode,
+            modifierFlags: carbonModifiers,
+            displayString: SettingsManager.displayString(for: event.keyCode, modifierFlags: carbonModifiers)
         )
         
-        // Check if hotkey is already in use
         if !SettingsManager.shared.isHotkeyInUse(newHotkey) {
             hotkey = newHotkey
-            // Notify HotkeyManager to re-register hotkeys
             NotificationCenter.default.post(name: NSNotification.Name("HotkeySettingsChanged"), object: nil)
         }
         

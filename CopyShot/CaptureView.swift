@@ -27,6 +27,7 @@ struct CaptureView: View {
                     Rectangle().stroke(Color.white, lineWidth: 1)
                         .frame(width: selectionRect.width, height: selectionRect.height)
                         .position(x: selectionRect.midX, y: selectionRect.midY)
+                        .accessibilityLabel(Text("Selection rectangle at \(Int(selectionRect.origin.x)), \(Int(selectionRect.origin.y)) with size \(Int(selectionRect.width)) by \(Int(selectionRect.height))"))
                 }
                 CrosshairShape().stroke(Color.white, lineWidth: 1)
                     .frame(width: 4000, height: 4000)
@@ -38,6 +39,8 @@ struct CaptureView: View {
             .onContinuousHover { phase in
                 if case .active(let location) = phase { self.mouseLocation = location }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(Text("Screen capture area. Drag to select a region to copy text from."))
         }
     }
 

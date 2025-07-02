@@ -15,8 +15,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     // The manager is now created on the main actor, which is safe.
     private let captureManager = ScreenCaptureManager()
-    private var settingsWindow: NSWindow?
-
+    
+    @Published var menuBarIconState: MenuBarIconState = .idle
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("--- App is ready. Setting up services. ---")
         
@@ -31,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             
             guard let capturedImage = image else {
                 print("Capture was cancelled or failed.")
+                self.resetIcon()
                 return
             }
             
@@ -47,6 +49,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                             title: "No Text Found",
                             body: "The selected area did not contain any recognizable text."
                         )
+                        self.resetIcon()
                     } else {
                         print("Successfully recognized text. Copying to clipboard.")
                         ClipboardManager.copyToClipboard(text: recognizedText)
@@ -57,13 +60,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         )
                         // Also play the sound on success.
                         FeedbackManager.playSuccessSound()
+                        self.setSuccessIcon()
                     }
                 case .failure(let error):
                     print("OCR failed with error: \(error.localizedDescription)")
                     FeedbackManager.showNotification(
                         title: "OCR Failed",
-                        body: "Could not recognize text. Please try again."
+                        body: error.localizedDescription
                     )
+                    self.resetIcon()
                 }
             }
         }
@@ -116,40 +121,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // This function handles the capture hotkey.
     @objc func captureHotkeyDidFire() {
         print("--- Capture hotkey fired! Starting capture... ---")
+        menuBarIconState = .capturing
         captureManager.startCapture()
     }
     
     // This function handles the settings hotkey.
     @objc func settingsHotkeyDidFire() {
         print("--- Settings hotkey fired! Opening settings... ---")
-        openSettings()
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        NSApp.activate(ignoringOtherApps: true)
+        // Bring the settings window to the front
+        if let window = NSApp.windows.first(where: { $0.title == "CopyShot Settings" }) {
+            window.makeKeyAndOrderFront(nil)
+            window.level = .floating
+        }
     }
     
-    private func openSettings() {
-        // Open the settings window
-        if let settingsWindow = settingsWindow {
-            settingsWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        } else {
-            // Create settings window if it doesn't exist
-            let settingsView = SettingsView()
-                .environmentObject(SettingsManager.shared)
-            
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 440, height: 580),
-                styleMask: [.titled, .closable],
-                backing: .buffered,
-                defer: false
-            )
-            
-            window.title = "CopyShot Settings"
-            window.contentView = NSHostingView(rootView: settingsView)
-            window.center()
-            window.makeKeyAndOrderFront(nil)
-            
-            self.settingsWindow = window
-            NSApp.activate(ignoringOtherApps: true)
+    private func setSuccessIcon() {
+        menuBarIconState = .success
+        // After a delay, revert to the idle icon.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.menuBarIconState = .idle
         }
+    }
+    
+    private func resetIcon() {
+        menuBarIconState = .idle
     }
     
     deinit {
@@ -167,7 +164,7 @@ struct CopyShotApp: App {
 
     var body: some Scene {
         // This is the primary scene for a Menu Bar app.
-        MenuBarExtra("CopyShot", systemImage: "text.viewfinder") {
+        MenuBarExtra("CopyShot", systemImage: appDelegate.menuBarIconState.rawValue) {
             
             // This is the content of the menu that appears when you click the icon.
             
@@ -179,7 +176,12 @@ struct CopyShotApp: App {
             Divider()
             
             // This special button automatically opens our Settings scene.
-            SettingsLink()
+            SettingsLink {
+                Text("Settings...")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
+                NSApp.activate(ignoringOtherApps: true)
+            }
             
             Divider()
             
