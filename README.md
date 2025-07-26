@@ -21,6 +21,52 @@ Works on every display, sips battery, and it’s open source!
 
 ---
 
+## Local Setup and Running from Source
+If you wish to build and run CopyShot directly from the source code on your macOS machine, follow these steps:
+
+### Prerequisites
+
+*   **macOS:** A Mac running macOS.
+*   **Xcode:** Apple's integrated development environment (IDE). You can download it for free from the Mac App Store.
+ 
+### Steps
+ 
+1.  **Clone the Repository:**
+
+Open your Terminal application and clone the CopyShot GitHub repository:
+```
+git clone https://github.com/[YOUR_USERNAME]/CopyShot.git
+cd CopyShot
+```
+*(Replace `[YOUR_USERNAME]` with your actual GitHub username or the repository's owner.)*
+
+2.  **Open in Xcode:**
+Open the `CopyShot.xcodeproj` file located in the cloned directory with Xcode.
+
+3.  **Build and Run:**
+*   In Xcode, select the `CopyShot` target and your desired build scheme (e.g., `My Mac`).
+*   Click the **Run** button (the play icon) in the top-left corner of the Xcode window, or go to `Product > Run`.
+*   Xcode will build the application and launch it.
+
+4.  **Grant Screen Recording Permissions:**
+The first time you run CopyShot, macOS security features will prevent it from capturing your screen. You will need to manually grant permission. Here is how to locate Screen Recording Permissions manually:
+*   Go to **System Settings** (or System Preferences on older macOS versions).
+*   Navigate to **Privacy & Security**.
+*   Click on **Screen Recording** in the list on the left.
+*   Find **CopyShot** in the list of applications and **enable the toggle** next to it.
+*   You will be prompted to **Quit & Reopen** CopyShot for the changes to take effect, do so.
+
+5. If you'd like to make any change to the code:
+* Make the change and save.
+* Quit the any running CopyShot instance.
+* **Delete** the given Screen Recording Permission access to all CopyShot instances.
+* Rerun the app and regrant permissions. (If doesn't work, try `Product/Perform Action/Run Without Building`)
+
+Once these steps are completed, CopyShot App should be in your Mac and should be running as a menu bar application on your Mac.
+If you really did go through the hassle to run this software on your Mac, first, thanks, second, you probably know what you're doing, so good luck at whatever you're doing.
+
+---
+
 ## 🚀 Possible Future Features (ideas welcome)
 
 <details>
