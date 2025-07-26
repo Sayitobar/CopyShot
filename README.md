@@ -1,9 +1,8 @@
 # 📸 CopyShot  
 ### Fast OCR in your Mac’s menu bar
 
-CopyShot is a macOS utility that lives in your menu bar.  
-Select any part of your screen → get the text copied to your clipboard in one keystroke.
-The best part: it's open source.
+Select → extract → clipboard. One keystroke (⌘⇧C).  
+Works on every display, sips battery, and it’s open source!
 
 ---
 
@@ -11,20 +10,18 @@ The best part: it's open source.
 
 | Feature | Description |
 |---------|-------------|
-| **Intuitive Capture** | Drag to select anything on-screen. |
-| **Multi-Monitor** | Works across all connected displays. |
-| **Escape to Cancel** | Press **Esc** at any time to abort a capture. |
-| **Global Hotkey** | Trigger instantly with a custom shortcut (⌘⇧C by default). |
-| **Re-bindable Keys** | Change the hotkey inside Settings; supports all modifiers. |
-| **Native Settings** | Clean SwiftUI pane that feels right at home on macOS. |
-| **Rich Notifications** | Haptic feedback, custom sounds, SF Symbols, and adjustable text preview length. |
-| **Vision-Powered OCR** | Apple’s Vision framework with **Accurate** or **Fast** modes + language correction. |
-| **Image Preprocessing** | Auto grayscale + contrast boost for sharper recognition. |
-| **Resource Friendly** | Minimal CPU/RAM footprint even during active use. |
+| **Drag-to-Capture** | Any screen area, instantly. |
+| **Multi-Monitor** | Seamless across all displays. |
+| **⌘⇧C (or your own)** | Re-bindable global hotkey. |
+| **Vision OCR** | Accurate / Fast modes + language correction. |
+| **Auto Preprocessing** | Grayscale + contrast boost for cleaner scans. |
+| **SwiftUI Settings** | Native, snappy, familiar. |
+| **Rich Notifications** | Sound, haptics, SF Symbols, adjustable preview. |
+| **Resource Friendly** | Barely touches CPU or RAM. |
 
 ---
 
-## 🚀 Possible Future Features
+## 🚀 Possible Future Features (ideas welcome)
 
 <details>
   <summary>Click to expand</summary>
@@ -64,3 +61,6 @@ The best part: it's open source.
 
 CopyShot was **live-coded with Gemini CLI**: Every line, refactor, and bug-fix was done with the help of Gemini.
 This small experiment shows how far AI-assisted software development has come.
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
