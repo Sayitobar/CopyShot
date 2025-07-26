@@ -11,7 +11,8 @@ struct CaptureView: View {
     @State private var startPoint: CGPoint?
     @State private var endPoint: CGPoint?
     @State private var mouseLocation: CGPoint = .zero
-    let onCapture: (CGRect) -> Void
+    let onCapture: (CGRect, NSScreen) -> Void
+    let screen: NSScreen
 
     var body: some View {
         GeometryReader { geometry in
@@ -58,16 +59,10 @@ struct CaptureView: View {
             }
             .onEnded { value in
                 guard let localRect = selectionRectangle(), localRect.width > 5, localRect.height > 5 else {
-                    onCapture(.zero)
+                    onCapture(.zero, screen)
                     return
                 }
-                let globalRect = CGRect(
-                    x: geometry.frame(in: .global).origin.x + localRect.origin.x,
-                    y: geometry.frame(in: .global).origin.y + localRect.origin.y,
-                    width: localRect.width,
-                    height: localRect.height
-                )
-                onCapture(globalRect)
+                onCapture(localRect, screen)
             }
     }
 }
