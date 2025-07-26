@@ -93,8 +93,9 @@ class SettingsManager: ObservableObject {
         let savedLevel = UserDefaults.standard.integer(forKey: SettingsKeys.recognitionLevel)
         self.recognitionLevel = RecognitionLevel(rawValue: savedLevel) ?? .accurate
         
+        // Default to true for better accuracy, allow user to change.
         if UserDefaults.standard.object(forKey: SettingsKeys.usesLanguageCorrection) == nil {
-            self.usesLanguageCorrection = false
+            self.usesLanguageCorrection = true
         }
         else {
             self.usesLanguageCorrection = UserDefaults.standard.bool(forKey: SettingsKeys.usesLanguageCorrection)

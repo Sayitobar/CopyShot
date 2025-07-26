@@ -32,7 +32,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         do {
             streamContent = try await SCShareableContent.current
         } catch {
-            print("Permission Error: \(error.localizedDescription)")
+            debugPrint("Permission Error: \(error.localizedDescription)")
             onCaptureComplete?(nil)
             return
         }
@@ -52,7 +52,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
 
         // Create one overlay window for each screen.
         for screen in NSScreen.screens {
-            print("NSScreen Frame: \(screen.frame)")
+            debugPrint("NSScreen Frame: \(screen.frame)")
             let captureView = CaptureView(onCapture: onCaptureAction, screen: screen)
             let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isOpaque = false
@@ -88,17 +88,17 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
             return
         }
         
-        print("--- NSScreen frames ---")
+        debugPrint("--- NSScreen frames ---")
         for screen in NSScreen.screens {
-            print("NSScreen Frame: \(screen.frame)")
+            debugPrint("NSScreen Frame: \(screen.frame)")
         }
-        print("-----------------------")
+        debugPrint("-----------------------")
         
-        print("--- SCShareableContent.current.displays frames ---")
+        debugPrint("--- SCShareableContent.current.displays frames ---")
         for display in content.displays {
-            print("SCDisplay Frame: \(display.frame)")
+            debugPrint("SCDisplay Frame: \(display.frame)")
         }
-        print("--------------------------------------------------")
+        debugPrint("--------------------------------------------------")
         
         // Find the SCDisplay matching the NSScreen where the selection was made by matching x, width, and height
         guard let targetDisplay = content.displays.first(where: {
@@ -106,7 +106,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
             $0.frame.width == selectionData.screen.frame.width &&
             $0.frame.height == selectionData.screen.frame.height
         }) else {
-            print("Error: Could not find a capturable display for the selected screen.")
+            debugPrint("Error: Could not find a capturable display for the selected screen.")
             complete(with: nil)
             return
         }
@@ -118,11 +118,11 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         // The localRect from CaptureView is relative to the NSScreen's frame (top-left origin)
         // SCDisplay frame has a bottom-left origin.
         
-        print("\n--- Source Rect Calculation Inputs ---")
-        print("selectionData.rect (localRect): \(selectionData.rect)")
-        print("selectionData.screen.frame: \(selectionData.screen.frame)")
-        print("targetDisplay.frame: \(targetDisplay.frame)")
-        print("--------------------------------------")
+        debugPrint("\n--- Source Rect Calculation Inputs ---")
+        debugPrint("selectionData.rect (localRect): \(selectionData.rect)")
+        debugPrint("selectionData.screen.frame: \(selectionData.screen.frame)")
+        debugPrint("targetDisplay.frame: \(targetDisplay.frame)")
+        debugPrint("--------------------------------------")
         
         let sourceRect = CGRect(
             x: selectionData.rect.origin.x,
@@ -135,17 +135,17 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         config.width = Int(selectionData.rect.width) // Set width to selection width
         config.height = Int(selectionData.rect.height) // Set height to selection height
         config.scalesToFit = true
-        config.queueDepth = 5
+        config.queueDepth = 1
         
-        print("Calculated sourceRect: \(sourceRect)")
-        print("Target Display Frame for SCStream: \(targetDisplay.frame)")
+        debugPrint("Calculated sourceRect: \(sourceRect)")
+        debugPrint("Target Display Frame for SCStream: \(targetDisplay.frame)")
         
         do {
             stream = SCStream(filter: filter, configuration: config, delegate: self)
             try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: .global(qos: .userInitiated))
             Task { try await stream?.startCapture() }
         } catch {
-            print("Error starting stream: \(error.localizedDescription)")
+            debugPrint("Error starting stream: \(error.localizedDescription)")
             complete(with: nil)
         }
     }

@@ -19,7 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     @Published var menuBarIconState: MenuBarIconState = .idle
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("--- App is ready. Setting up services. ---")
+        debugPrint("--- App is ready. Setting up services. ---")
         
         // No longer requesting UNNotification permission as we are using custom notifications.
         // UNUserNotificationCenter.current().delegate = self
@@ -28,10 +28,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // This is now safe because both the AppDelegate and the captureManager
         // are on the Main Actor.
         captureManager.onCaptureComplete = { image in
-            print("--- AppDelegate: onCaptureComplete closure EXECUTED. ---")
+            debugPrint("--- AppDelegate: onCaptureComplete closure EXECUTED. ---")
             
             guard let capturedImage = image else {
-                print("Capture was cancelled or failed.")
+                debugPrint("Capture was cancelled or failed.")
                 FeedbackManager.showNotification(
                     title: "Capture Cancelled",
                     body: "The screen capture was cancelled or failed.",
@@ -43,7 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 return
             }
             
-            print("Image captured successfully. Performing OCR...")
+            debugPrint("Image captured successfully. Performing OCR...")
             
             // The OCR service runs on a background thread internally,
             // so this call does not block the main thread.
@@ -51,7 +51,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 switch result {
                 case .success(let recognizedText):
                     if recognizedText.isEmpty {
-                        print("OCR completed, but no text was found.")
+                        debugPrint("OCR completed, but no text was found.")
                         FeedbackManager.showNotification(
                             title: "No Text Found",
                             body: "The selected area did not contain any recognizable text.",
@@ -61,7 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         )
                         self.resetIcon()
                     } else {
-                        print("Successfully recognized text. Copying to clipboard.")
+                        debugPrint("Successfully recognized text. Copying to clipboard.")
                         ClipboardManager.copyToClipboard(text: recognizedText)
                         
                         let previewText: String
@@ -82,7 +82,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         self.setSuccessIcon()
                     }
                 case .failure(let error):
-                    print("OCR failed with error: \(error.localizedDescription)")
+                    debugPrint("OCR failed with error: \(error.localizedDescription)")
                     FeedbackManager.showNotification(
                         title: "OCR Failed",
                         body: error.localizedDescription,
@@ -106,7 +106,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             object: nil
         )
         
-        print("--- Setup complete. Waiting for hotkeys. ---")
+        debugPrint("--- Setup complete. Waiting for hotkeys. ---")
     }
     
     private func requestNotificationPermission() {
@@ -121,7 +121,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     // This function handles the capture hotkey.
     @objc func captureHotkeyDidFire() {
-        print("--- Capture hotkey fired! Starting capture... ---")
+        debugPrint("--- Capture hotkey fired! Starting capture... ---")
         menuBarIconState = .capturing
         captureManager.startCapture()
     }

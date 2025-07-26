@@ -31,7 +31,7 @@ class OCRService {
         
         let request = VNRecognizeTextRequest { (request, error) in
             if let error = error {
-                print("OCR Error: \(error.localizedDescription)")
+                debugPrint("OCR Error: \(error.localizedDescription)")
                 DispatchQueue.main.async { completion(.failure(error)) }
                 return
             }
@@ -104,16 +104,15 @@ class OCRService {
             do {
                 try requestHandler.perform([request])
             } catch {
-                print("OCR Request Handler Error: \(error.localizedDescription)")
+                debugPrint("OCR Request Handler Error: \(error.localizedDescription)")
                 DispatchQueue.main.async { completion(.failure(error)) }
             }
         }
     }
     
+    private static let ciContext = CIContext(options: nil)
+
     private static func preprocessImage(_ originalImage: CGImage) -> CGImage? {
-        // Create a Core Image context
-        let context = CIContext(options: nil)
-        
         // Create a CIImage from the CGImage
         let ciImage = CIImage(cgImage: originalImage)
         
@@ -130,7 +129,7 @@ class OCRService {
         
         // Get the final processed image
         guard let finalImage = contrastFilter.outputImage,
-              let processedCGImage = context.createCGImage(finalImage, from: finalImage.extent) else {
+              let processedCGImage = ciContext.createCGImage(finalImage, from: finalImage.extent) else {
             return originalImage // If processing fails, return the original
         }
         
