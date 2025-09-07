@@ -26,8 +26,8 @@ If you wish to build and run CopyShot directly from the source code on your macO
 
 ### Prerequisites
 
-*   **macOS:** A Mac running macOS.
-*   **Xcode:** Apple's integrated development environment (IDE). You can download it for free from the Mac App Store.
+*   **macOS:**
+*   **Xcode:** Available in App Store.
  
 ### Steps
  
@@ -35,10 +35,9 @@ If you wish to build and run CopyShot directly from the source code on your macO
 
 Open your Terminal application and clone the CopyShot GitHub repository:
 ```
-git clone https://github.com/[YOUR_USERNAME]/CopyShot.git
+git clone https://github.com/Sayitobar/CopyShot.git
 cd CopyShot
 ```
-*(Replace `[YOUR_USERNAME]` with your actual GitHub username or the repository's owner.)*
 
 2.  **Open in Xcode:**
 Open the `CopyShot.xcodeproj` file located in the cloned directory with Xcode.
@@ -72,32 +71,28 @@ If you really did go through the hassle to run this software on your Mac, first,
 <details>
   <summary>Click to expand</summary>
 
+### Editing Copied Texts
+- Introduce a button below the copy notification to apply various text edit tools for quick-edit, like removing line breaks, applying UPPERCASE, lowercase, Title Case, Sentence case, tOGGLE, etc.
+- Maybe even integrating an LLM with your API key and a custom system prompt for editing the text?
+
 ### OCR Enhancements
-- Personal glossary for domain-specific terms  
-- Multi-language picker UI  
-- OCR history with instant search & re-copy  
-- Drag-and-drop image files for OCR  
-- Advanced preprocessing: deskew, denoise, adaptive binarization  
+- Personal glossary for domain-specific terms
+- Multi-language picker UI
+- OCR history with instant search & re-copy
+- Drag-and-drop image files for OCR
+- Advanced preprocessing: deskew, denoise, adaptive binarization
 
 ### Capture Enhancements
-- Capture an entire window or app  
-- Timed capture (3-2-1 countdown)  
-- Scrolling capture for long pages  
-- Save screenshot as PNG/JPG  
-- Copy the raw image to clipboard  
+- Capture an entire window or app
+- Timed capture (3-2-1 countdown)
+- Scrolling capture for long pages
+- Save screenshot as PNG/JPG
+- Copy the raw image to clipboard
 
 ### UX & Accessibility
-- First-run onboarding wizard  
-- In-app help & mini-tutorial  
-- iCloud-sync preferences  
-- VoiceOver & other accessibility refinements  
-
-### Integration
-- macOS Share Sheet for recognized text  
-- Register as a macOS Service (right-click → “Send to CopyShot”)
-
-### Performance
-- Continuous profiling & low-level optimizations  
+- First-run onboarding wizard
+- In-app help & mini-tutorial
+- VoiceOver & other accessibility refinements
 
 </details>
 
