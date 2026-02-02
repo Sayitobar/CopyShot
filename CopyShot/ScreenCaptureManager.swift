@@ -151,7 +151,13 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     
     nonisolated private func complete(with image: CGImage?) {
-        DispatchQueue.main.async { self.onCaptureComplete?(image) }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if let callback = self.onCaptureComplete {
+                callback(image)
+                self.onCaptureComplete = nil
+            }
+        }
     }
 
     // MARK: - SCStream Delegate

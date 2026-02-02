@@ -155,30 +155,7 @@ struct CopyShotApp: App {
     var body: some Scene {
         // This is the primary scene for a Menu Bar app.
         MenuBarExtra("CopyShot", systemImage: appDelegate.menuBarIconState.rawValue) {
-            
-            // This is the content of the menu that appears when you click the icon.
-            
-            Button("Capture Text") {
-                // Manually trigger the capture flow.
-                appDelegate.captureHotkeyDidFire()
-            }
-            
-            Divider()
-            
-            // This special button automatically opens our Settings scene.
-            SettingsLink {
-                Text("Settings...")
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.willBecomeActiveNotification)) { _ in
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            
-            Divider()
-            
-            Button("Quit CopyShot") {
-                NSApplication.shared.terminate(nil)
-            }
-            
+            CopyShotMenu(appDelegate: appDelegate)
         }
         
         // This defines the window that opens when the user clicks the SettingsLink.
@@ -186,7 +163,42 @@ struct CopyShotApp: App {
         Settings {
             SettingsView()
                 .environmentObject(settings) // Pass the settings manager to the view
-                .frame(width: 380) // Set a fixed width for the settings window
+                .frame(width: 400) // Set a fixed width for the settings window
         }
     }
+}
+
+struct CopyShotMenu: View {
+    var appDelegate: AppDelegate
+    @Environment(\.openSettings) private var openSettings
+    
+    var body: some View {
+        Button("Capture Text") {
+            // Manually trigger the capture flow.
+            appDelegate.captureHotkeyDidFire()
+        }
+        
+        Divider()
+        
+        if #available(macOS 14.0, *) {
+            Button("Settings...") {
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
+            }
+        } else {
+            SettingsLink {
+                Text("Settings...")
+            }
+        }
+        
+        Divider()
+        
+        Button("Quit CopyShot") {
+            NSApplication.shared.terminate(nil)
+        }
+    }
+    
+    // Fallback for openSettings on older OS versions where the environment key might not be available or strictly typed?
+    // Actually @Environment(\.openSettings) is non-optional in signature but only available on 14.0+.
+    // The #available check guards the usage.
 }
