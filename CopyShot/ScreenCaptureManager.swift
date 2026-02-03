@@ -13,6 +13,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
     
     private var overlayWindows: [OverlayWindow] = []
     private var stream: SCStream?
+    private var isCaptureActive = false
     struct CaptureSelection {
     let rect: CGRect
     let screen: NSScreen
@@ -24,6 +25,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
 
     // MARK: - UI Flow
     func startCapture() {
+        isCaptureActive = true
         Task { await showOverlay() }
     }
     
@@ -33,7 +35,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
             streamContent = try await SCShareableContent.current
         } catch {
             debugPrint("Permission Error: \(error.localizedDescription)")
-            onCaptureComplete?(nil)
+            complete(with: nil)
             return
         }
         
@@ -45,7 +47,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
                     self.selectedRegion = CaptureSelection(rect: localRect, screen: screen)
                     self.closeOverlay()
                     if localRect != .zero { self.startStream() }
-                    else { self.onCaptureComplete?(nil) }
+                    else { self.complete(with: nil) }
                 }
             }
         }
@@ -78,7 +80,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
     
     private func cancelCapture() {
         closeOverlay()
-        onCaptureComplete?(nil)
+        complete(with: nil)
     }
     
     // MARK: - Capture Flow
@@ -151,12 +153,10 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     
     nonisolated private func complete(with image: CGImage?) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if let callback = self.onCaptureComplete {
-                callback(image)
-                self.onCaptureComplete = nil
-            }
+        Task { @MainActor in
+            guard self.isCaptureActive else { return }
+            self.isCaptureActive = false
+            self.onCaptureComplete?(image)
         }
     }
 
