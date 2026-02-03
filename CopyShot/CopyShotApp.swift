@@ -73,8 +73,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         
                         FeedbackManager.showNotification(
                             title: "Text Copied",
-                            subtitle: previewText,
-                            body: "The recognized text has been copied to your clipboard.",
+                            subtitle: "The recognized text has been copied to your clipboard.",
+                            body: previewText,
                             iconName: "checkmark.circle.fill",
                             accentColor: .green,
                             soundName: "Funk"
@@ -163,7 +163,6 @@ struct CopyShotApp: App {
         Settings {
             SettingsView()
                 .environmentObject(settings) // Pass the settings manager to the view
-                .frame(width: 400) // Set a fixed width for the settings window
         }
     }
 }
@@ -196,6 +195,7 @@ struct CopyShotMenu: View {
         Button("Quit CopyShot") {
             NSApplication.shared.terminate(nil)
         }
+        .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
     }
     
     // Fallback for openSettings on older OS versions where the environment key might not be available or strictly typed?

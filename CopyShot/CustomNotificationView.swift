@@ -31,14 +31,19 @@ struct CustomNotificationView: View {
                         .foregroundColor(.primary)
                     
                     if let subtitle = subtitle, !subtitle.isEmpty {
+                        // Subtitle: Explanation text (Brighter, Primary)
                         Text(subtitle)
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     
+                    // Body: Preview Text (Darker, Secondary)
                     Text(bodyText)
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
             }

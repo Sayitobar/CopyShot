@@ -9,6 +9,23 @@ import Foundation
 import Vision
 import Carbon
 import AppKit // Import for NSEvent
+import SwiftUI
+
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system = "System"
+    case light = "Light"
+    case dark = "Dark"
+    
+    var id: String { self.rawValue }
+    
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
 
 // Define keys for our settings to avoid typos.
 enum SettingsKeys {
@@ -17,6 +34,7 @@ enum SettingsKeys {
     static let recognitionLanguages = "recognitionLanguages"
     static let captureHotkey = "captureHotkey"
     static let textPreviewLimit = "textPreviewLimit"
+    static let appAppearance = "appAppearance"
 }
 
 // Using an enum for the recognition level makes our code safer and clearer.
@@ -88,6 +106,12 @@ class SettingsManager: ObservableObject {
         }
     }
     
+    @Published var appearance: AppAppearance {
+        didSet {
+            UserDefaults.standard.set(appearance.rawValue, forKey: SettingsKeys.appAppearance)
+        }
+    }
+    
     private init() {
         // Initialize all properties with defaults first
         let savedLevel = UserDefaults.standard.integer(forKey: SettingsKeys.recognitionLevel)
@@ -112,6 +136,10 @@ class SettingsManager: ObservableObject {
         }
         
         self.textPreviewLimit = UserDefaults.standard.integer(forKey: SettingsKeys.textPreviewLimit) == 0 ? 50 : UserDefaults.standard.integer(forKey: SettingsKeys.textPreviewLimit)
+        
+        // Load appearance
+        let savedAppearance = UserDefaults.standard.string(forKey: SettingsKeys.appAppearance) ?? AppAppearance.system.rawValue
+        self.appearance = AppAppearance(rawValue: savedAppearance) ?? .system
     }
     
     // Helper property to get available languages from Vision

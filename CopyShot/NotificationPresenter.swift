@@ -20,7 +20,7 @@ class NotificationPresenter: ObservableObject {
     
     private var dismissTimer: AnyCancellable?
     private var notificationWindow: NSWindow?
-    private var hostingView: NSHostingView<CustomNotificationView>? // Keep a reference to the hosting view
+    private var hostingView: NSHostingView<AnyView>? // Keep a reference to the hosting view
     
     func showNotification(
         title: String,
@@ -67,8 +67,9 @@ class NotificationPresenter: ObservableObject {
                 set: { [weak self] newValue in self?.isShowingNotification = newValue }
             )
         )
+        .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
 
-        hostingView = NSHostingView(rootView: notificationView)
+        hostingView = NSHostingView(rootView: AnyView(notificationView))
         notificationWindow?.contentView = hostingView
         
         // Calculate fitting size and set window frame

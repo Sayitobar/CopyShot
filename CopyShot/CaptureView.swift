@@ -43,6 +43,7 @@ struct CaptureView: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text("Screen capture area. Drag to select a region to copy text from."))
         }
+        .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
     }
 
     private func selectionRectangle() -> CGRect? {
