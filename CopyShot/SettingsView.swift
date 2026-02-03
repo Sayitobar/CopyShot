@@ -19,22 +19,22 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack(spacing: 12) {
+            HStack(spacing: 16) {
                 if let appIcon = NSImage(named: NSImage.applicationIconName) {
                     Image(nsImage: appIcon)
                         .resizable()
-                        .frame(width: 32, height: 32)
+                        .frame(width: 48, height: 48)
                 } else {
                     Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 24))
+                        .font(.system(size: 36))
                         .foregroundStyle(.blue.gradient)
                 }
                 Text("CopyShot")
-                    .font(.title2)
+                    .font(.largeTitle)
                     .fontWeight(.bold)
             }
-            .padding(.top, 20)
-            .padding(.bottom, 12)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
             
             // Tab Selection
             Picker("", selection: $selectedTab) {
@@ -246,10 +246,8 @@ struct SettingsView: View {
                 .font(.body)
                 .fontWeight(.medium)
             
-            Spacer()
-            
             VStack(spacing: 4) {
-                Text("© \(Calendar.current.component(.year, from: Date())) CopyShot, by Sayitobar.")
+                Text(verbatim: "\(Calendar.current.component(.year, from: Date())) CopyShot, by Sayitobar.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
