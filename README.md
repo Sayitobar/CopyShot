@@ -1,10 +1,32 @@
-# CopyShot
-### Fast OCR in your Mac's menu bar
+<div align="center" style="display: flex; justify-content: center; align-items: center; margin-bottom: 20px;">
+  <img src="CopyShot/Assets.xcassets/AppIcon.appiconset/v2.png" width="140" alt="CopyShot Logo" style="margin-right: 20px; vertical-align: middle;"/>
+  <div style="text-align: left;">
+    <h1 align="center" style="margin: 0;">CopyShot</h1>
+    <p align="center" style="margin: 0; color: gray;">Fast OCR in your Mac's menu bar</p>
+  </div>
+</div>
 
-Select → extract → clipboard. One keystroke (⌘⇧C).  
-Works on every display, resource friendly, and it’s open source!
+<div align="center">
+<a href="https://github.com/Sayitobar/CopyShot/releases"><img src="https://img.shields.io/github/downloads/Sayitobar/CopyShot/total.svg?style=flat" alt="downloads"/></a>
+<a href="https://github.com/Sayitobar/CopyShot/releases"><img src="https://img.shields.io/github/release-pre/Sayitobar/CopyShot.svg?style=flat" alt="latest version"/></a>
+<a href="https://github.com/Sayitobar/CopyShot/blob/master/License.txt"><img src="https://img.shields.io/github/license/Sayitobar/CopyShot.svg?style=flat" alt="license"/></a>
+<a href="https://github.com/Sayitobar/CopyShot"><img src="https://img.shields.io/badge/platform-macOS-blue.svg?style=flat" alt="platform"/></a>
+</div>
 
----
+<br/>
+<br/>
+
+<p align="center">
+  Select → extract → clipboard. One keystroke (⌘⇧C).<br>
+  Works on every display, resource friendly, and it’s open source.
+</p>
+
+<br/>
+<div align="center">
+  <img src=".github/screenshot.png" width="500" alt="Screenshot"/><br/>
+</div>
+
+<hr>
 
 ## Main Features
 
