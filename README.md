@@ -9,7 +9,7 @@
 <div align="center">
 <a href="https://github.com/Sayitobar/CopyShot/releases"><img src="https://img.shields.io/github/downloads/Sayitobar/CopyShot/total.svg?style=flat" alt="downloads"/></a>
 <a href="https://github.com/Sayitobar/CopyShot/releases"><img src="https://img.shields.io/github/release-pre/Sayitobar/CopyShot.svg?style=flat" alt="latest version"/></a>
-<a href="https://github.com/Sayitobar/CopyShot/blob/master/License.txt"><img src="https://img.shields.io/github/license/Sayitobar/CopyShot.svg?style=flat" alt="license"/></a>
+<a href="https://github.com/Sayitobar/CopyShot/blob/master/LICENSE"><img src="https://img.shields.io/github/license/Sayitobar/CopyShot.svg?style=flat" alt="license"/></a>
 <a href="https://github.com/Sayitobar/CopyShot"><img src="https://img.shields.io/badge/platform-macOS-blue.svg?style=flat" alt="platform"/></a>
 </div>
 
