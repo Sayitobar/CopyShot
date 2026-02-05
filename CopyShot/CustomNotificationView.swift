@@ -52,13 +52,13 @@ struct CustomNotificationView: View {
             .cornerRadius(12)
             .shadow(radius: 8)
             .padding(.horizontal)
-            .fixedSize(horizontal: false, vertical: true) // Allow content to dictate height
-            .frame(minHeight: 60) // Ensure a minimum height
-            .offset(y: isVisible ? 0 : -150) // Adjusted offset for smoother animation
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 60)
+            .offset(y: isVisible ? 0 : -150)
             .animation(.spring(response: 0.5, dampingFraction: 0.7, blendDuration: 0), value: isVisible)
         }
         .frame(maxWidth: .infinity, alignment: .topTrailing)
-        .opacity(isVisible ? 1 : 0) // Apply opacity for fade-in/out
+        .opacity(isVisible ? 1 : 0)
         .animation(.easeIn(duration: 0.2), value: isVisible)
         .onAppear {
             isVisible = true

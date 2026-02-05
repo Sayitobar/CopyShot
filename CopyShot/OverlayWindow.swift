@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import SwiftUI
 
 // We create a custom NSWindow subclass.
 class OverlayWindow: NSWindow {
@@ -33,5 +34,12 @@ class OverlayWindow: NSWindow {
             // For any other key, do nothing.
             super.keyDown(with: event)
         }
+    }
+}
+
+// Custom HostingView that accepts first mouse to prevent click-through/stutter
+class ActionHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
     }
 }

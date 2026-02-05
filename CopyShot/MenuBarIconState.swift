@@ -8,7 +8,7 @@
 import Foundation
 
 enum MenuBarIconState: String {
-    case idle = "text.viewfinder"
+    case idle = "MenuBarIcon"
     case capturing = "camera.viewfinder"
     case success = "checkmark.circle"
 }

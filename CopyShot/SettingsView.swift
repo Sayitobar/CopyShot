@@ -20,7 +20,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             // Header
             HStack(spacing: 16) {
-                if let appIcon = NSImage(named: NSImage.applicationIconName) {
+                if let appIcon = NSImage(named: "AppIcon") ?? NSImage(named: NSImage.applicationIconName) {
                     Image(nsImage: appIcon)
                         .resizable()
                         .frame(width: 48, height: 48)
@@ -223,7 +223,7 @@ struct SettingsView: View {
             
             // Logo & Info
             VStack(spacing: 8) {
-                if let appIcon = NSImage(named: NSImage.applicationIconName) {
+                if let appIcon = NSImage(named: "AppIcon") ?? NSImage(named: NSImage.applicationIconName) {
                     Image(nsImage: appIcon)
                         .resizable()
                         .frame(width: 80, height: 80)

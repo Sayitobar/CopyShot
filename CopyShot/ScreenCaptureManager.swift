@@ -34,7 +34,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         do {
             streamContent = try await SCShareableContent.current
         } catch {
-            debugPrint("Permission Error: \(error.localizedDescription)")
+            log("Permission Error: \(error.localizedDescription)", type: .error)
             complete(with: nil)
             return
         }
@@ -54,13 +54,13 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
 
         // Create one overlay window for each screen.
         for screen in NSScreen.screens {
-            debugPrint("NSScreen Frame: \(screen.frame)")
+            log("NSScreen Frame: \(screen.frame)")
             let captureView = CaptureView(onCapture: onCaptureAction, screen: screen)
             let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isOpaque = false
             window.backgroundColor = .clear
             window.level = .screenSaver
-            window.contentView = NSHostingView(rootView: captureView)
+            window.contentView = ActionHostingView(rootView: captureView)
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             window.onEscape = { [weak self] in Task { @MainActor in self?.cancelCapture() } }
             overlayWindows.append(window)
@@ -84,70 +84,62 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
     }
     
     // MARK: - Capture Flow
+    
+    /// Starts the ScreenCaptureKit stream for the selected region.
     private func startStream() {
-        guard let content = streamContent, let selectionData = selectedRegion else {
+        guard let content = streamContent, let selection = selectedRegion else {
+            log("Error: Missing stream content or selection data.", type: .error)
             complete(with: nil)
             return
         }
         
-        debugPrint("--- NSScreen frames ---")
-        for screen in NSScreen.screens {
-            debugPrint("NSScreen Frame: \(screen.frame)")
-        }
-        debugPrint("-----------------------")
+        log("Identifying target display for capture...")
         
-        debugPrint("--- SCShareableContent.current.displays frames ---")
-        for display in content.displays {
-            debugPrint("SCDisplay Frame: \(display.frame)")
-        }
-        debugPrint("--------------------------------------------------")
-        
-        // Find the SCDisplay matching the NSScreen where the selection was made by matching x, width, and height
+        // Match the selection screen to a SCDisplay based on frame origin and size.
         guard let targetDisplay = content.displays.first(where: {
-            $0.frame.origin.x == selectionData.screen.frame.origin.x &&
-            $0.frame.width == selectionData.screen.frame.width &&
-            $0.frame.height == selectionData.screen.frame.height
+            $0.frame.origin.x == selection.screen.frame.origin.x &&
+            $0.frame.width == selection.screen.frame.width &&
+            $0.frame.height == selection.screen.frame.height
         }) else {
-            debugPrint("Error: Could not find a capturable display for the selected screen.")
+            log("Error: Could not find a matching SCDisplay for the selected screen.", type: .error)
             complete(with: nil)
             return
         }
         
+        // Configure the stream
         let filter = SCContentFilter(display: targetDisplay, excludingApplications: [], exceptingWindows: [])
         let config = SCStreamConfiguration()
         
-        // Calculate the sourceRect relative to the targetDisplay's origin
-        // The localRect from CaptureView is relative to the NSScreen's frame (top-left origin)
-        // SCDisplay frame has a bottom-left origin.
+        let scaleFactor = selection.screen.backingScaleFactor
         
-        debugPrint("\n--- Source Rect Calculation Inputs ---")
-        debugPrint("selectionData.rect (localRect): \(selectionData.rect)")
-        debugPrint("selectionData.screen.frame: \(selectionData.screen.frame)")
-        debugPrint("targetDisplay.frame: \(targetDisplay.frame)")
-        debugPrint("--------------------------------------")
-        
+        // Map the point-based selection rect to the display's coordinate space.
         let sourceRect = CGRect(
-            x: selectionData.rect.origin.x,
-            y: selectionData.rect.origin.y, // Assuming top-left origin for sourceRect
-            width: selectionData.rect.width,
-            height: selectionData.rect.height
+            x: selection.rect.origin.x,
+            y: selection.rect.origin.y,
+            width: selection.rect.width,
+            height: selection.rect.height
         )
-        config.sourceRect = sourceRect // Set the sourceRect
         
-        config.width = Int(selectionData.rect.width) // Set width to selection width
-        config.height = Int(selectionData.rect.height) // Set height to selection height
+        config.sourceRect = sourceRect
+        
+        // Set the output alignment to pixel dimensions for Retina quality.
+        config.width = Int(selection.rect.width * scaleFactor)
+        config.height = Int(selection.rect.height * scaleFactor)
         config.scalesToFit = true
         config.queueDepth = 1
         
-        debugPrint("Calculated sourceRect: \(sourceRect)")
-        debugPrint("Target Display Frame for SCStream: \(targetDisplay.frame)")
+        log("Stream Configuration: SourceRect=\(sourceRect) OutputSize=\(config.width)x\(config.height) Scale=\(scaleFactor)")
         
         do {
             stream = SCStream(filter: filter, configuration: config, delegate: self)
             try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: .global(qos: .userInitiated))
-            Task { try await stream?.startCapture() }
+            
+            Task {
+                log("Starting SCStream...")
+                try await stream?.startCapture()
+            }
         } catch {
-            debugPrint("Error starting stream: \(error.localizedDescription)")
+            log("Failed to start stream: \(error.localizedDescription)", type: .error)
             complete(with: nil)
         }
     }
@@ -156,28 +148,57 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         Task { @MainActor in
             guard self.isCaptureActive else { return }
             self.isCaptureActive = false
+            self.log("Capture sequence completed. Success: \(image != nil)")
             self.onCaptureComplete?(image)
         }
     }
 
     // MARK: - SCStream Delegate
+    
     nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        Task { do { try await stream.stopCapture() } catch {} }
-        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { complete(with: nil); return }
-        let fullDisplayImage = CIImage(cvPixelBuffer: imageBuffer)
+        // Immediately stop the stream as we only need one frame.
+        Task {
+            do { try await stream.stopCapture() } catch {
+                // Ignore stop errors, as we are done anyway.
+            }
+        }
+        
+        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            log("Stream output failed: Could not get image buffer.", type: .error)
+            complete(with: nil)
+            return
+        }
+        
+        let ciImage = CIImage(cvPixelBuffer: imageBuffer)
         let context = CIContext()
-        guard let fullDisplayCGImage = context.createCGImage(fullDisplayImage, from: fullDisplayImage.extent) else { complete(with: nil); return }
+        
+        // Convert to CGImage
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+            log("Stream output failed: Could not create CGImage.", type: .error)
+            complete(with: nil)
+            return
+        }
         
         Task { @MainActor in
-            guard let selection = self.selectedRegion, let content = self.streamContent else { complete(with: nil); return }
-            let selectionCenter = CGPoint(x: selection.rect.midX, y: selection.rect.midY)
-            guard let targetDisplay = content.displays.first(where: { $0.frame.contains(selectionCenter) }) else { complete(with: nil); return }
-            
-            complete(with: fullDisplayCGImage)
+            // Guard against edge cases where selection was cleared
+            guard self.selectedRegion != nil else {
+                complete(with: nil)
+                return
+            }
+            log("Frame captured successfully.")
+            complete(with: cgImage)
         }
     }
 
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
+        log("Stream stopped with error: \(error.localizedDescription)", type: .error)
         complete(with: nil)
+    }
+    // MARK: - Logging helper
+    private enum LogType { case info, error }
+    
+    nonisolated private func log(_ message: String, type: LogType = .info) {
+        let prefix = type == .error ? "[ScreenCaptureManager] ❌" : "[ScreenCaptureManager] ℹ️"
+        debugPrint("\(prefix) \(message)")
     }
 }

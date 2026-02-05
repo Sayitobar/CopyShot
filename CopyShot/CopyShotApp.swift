@@ -21,9 +21,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     func applicationDidFinishLaunching(_ notification: Notification) {
         debugPrint("--- App is ready. Setting up services. ---")
         
-        // No longer requesting UNNotification permission as we are using custom notifications.
-        // UNUserNotificationCenter.current().delegate = self
-        
         // 1. Set up the completion handler ONCE.
         // This is now safe because both the AppDelegate and the captureManager
         // are on the Main Actor.
@@ -109,15 +106,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         debugPrint("--- Setup complete. Waiting for hotkeys. ---")
     }
     
-    private func requestNotificationPermission() {
-        // No longer needed for custom notifications
-    }
-    
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                willPresent notification: UNNotification,
-                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        // No longer needed for custom notifications
-    }
     
     // This function handles the capture hotkey.
     @objc func captureHotkeyDidFire() {
@@ -154,9 +142,25 @@ struct CopyShotApp: App {
 
     var body: some Scene {
         // This is the primary scene for a Menu Bar app.
-        MenuBarExtra("CopyShot", systemImage: appDelegate.menuBarIconState.rawValue) {
+        MenuBarExtra(content: {
             CopyShotMenu(appDelegate: appDelegate)
-        }
+        }, label: {
+            let state = appDelegate.menuBarIconState
+            if state == .idle {
+                // Resize the custom asset to be menu-bar friendly (e.g. 18x18 pts)
+                // This prevents large images from blowing up the menu bar size.
+                if let nsImage = NSImage(named: state.rawValue) {
+                    Image(nsImage: {
+                        nsImage.size = NSSize(width: 18, height: 18)
+                        return nsImage
+                    }())
+                } else {
+                    Image(systemName: "camera.viewfinder") // Fallback
+                }
+            } else {
+                 Image(systemName: state.rawValue) // SF Symbol
+            }
+        })
         
         // This defines the window that opens when the user clicks the SettingsLink.
         // It's a separate, secondary scene.
