@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 70;
+	objectVersion = 90;
 	objects = {
 
 /* Begin PBXContainerItemProxy section */
@@ -30,32 +30,38 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		0428F28A2DFDBDA300CFF1DB /* CopyShot */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = CopyShot; sourceTree = "<group>"; };
-		0428F2992DFDBDA500CFF1DB /* CopyShotTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = CopyShotTests; sourceTree = "<group>"; };
-		0428F2A32DFDBDA500CFF1DB /* CopyShotUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = CopyShotUITests; sourceTree = "<group>"; };
+		0428F28A2DFDBDA300CFF1DB /* CopyShot */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CopyShot;
+			sourceTree = "<group>";
+		};
+		0428F2992DFDBDA500CFF1DB /* CopyShotTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CopyShotTests;
+			sourceTree = "<group>";
+		};
+		0428F2A32DFDBDA500CFF1DB /* CopyShotUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CopyShotUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		0428F2852DFDBDA300CFF1DB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0428F2932DFDBDA500CFF1DB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0428F29D2DFDBDA500CFF1DB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -93,14 +99,10 @@
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
 			fileSystemSynchronizedGroups = (
 				0428F28A2DFDBDA300CFF1DB /* CopyShot */,
 			);
 			name = CopyShot;
-			packageProductDependencies = (
-			);
 			productName = CopyShot;
 			productReference = 0428F2882DFDBDA300CFF1DB /* CopyShot.app */;
 			productType = "com.apple.product-type.application";
@@ -122,8 +124,6 @@
 				0428F2992DFDBDA500CFF1DB /* CopyShotTests */,
 			);
 			name = CopyShotTests;
-			packageProductDependencies = (
-			);
 			productName = CopyShotTests;
 			productReference = 0428F2962DFDBDA500CFF1DB /* CopyShotTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -145,8 +145,6 @@
 				0428F2A32DFDBDA500CFF1DB /* CopyShotUITests */,
 			);
 			name = CopyShotUITests;
-			packageProductDependencies = (
-			);
 			productName = CopyShotUITests;
 			productReference = 0428F2A02DFDBDA500CFF1DB /* CopyShotUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -175,7 +173,6 @@
 				};
 			};
 			buildConfigurationList = 0428F2832DFDBDA300CFF1DB /* Build configuration list for PBXProject "CopyShot" */;
-			compatibilityVersion = "Xcode 15.3";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -184,6 +181,7 @@
 			);
 			mainGroup = 0428F27F2DFDBDA300CFF1DB;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 90;
 			productRefGroup = 0428F2892DFDBDA300CFF1DB /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -198,48 +196,36 @@
 /* Begin PBXResourcesBuildPhase section */
 		0428F2862DFDBDA300CFF1DB /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0428F2942DFDBDA500CFF1DB /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0428F29E2DFDBDA500CFF1DB /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0428F2842DFDBDA300CFF1DB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0428F2922DFDBDA500CFF1DB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		0428F29C2DFDBDA500CFF1DB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
@@ -257,7 +243,7 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		0428F2A82DFDBDA500CFF1DB /* Debug */ = {
+		0428F2A82DFDBDA500CFF1DB /* Debug configuration for PBXProject "CopyShot" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -322,7 +308,7 @@
 			};
 			name = Debug;
 		};
-		0428F2A92DFDBDA500CFF1DB /* Release */ = {
+		0428F2A92DFDBDA500CFF1DB /* Release configuration for PBXProject "CopyShot" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -379,7 +365,7 @@
 			};
 			name = Release;
 		};
-		0428F2AB2DFDBDA500CFF1DB /* Debug */ = {
+		0428F2AB2DFDBDA500CFF1DB /* Debug configuration for PBXNativeTarget "CopyShot" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -411,7 +397,7 @@
 			};
 			name = Debug;
 		};
-		0428F2AC2DFDBDA500CFF1DB /* Release */ = {
+		0428F2AC2DFDBDA500CFF1DB /* Release configuration for PBXNativeTarget "CopyShot" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -443,7 +429,7 @@
 			};
 			name = Release;
 		};
-		0428F2AE2DFDBDA500CFF1DB /* Debug */ = {
+		0428F2AE2DFDBDA500CFF1DB /* Debug configuration for PBXNativeTarget "CopyShotTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -461,7 +447,7 @@
 			};
 			name = Debug;
 		};
-		0428F2AF2DFDBDA500CFF1DB /* Release */ = {
+		0428F2AF2DFDBDA500CFF1DB /* Release configuration for PBXNativeTarget "CopyShotTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -479,7 +465,7 @@
 			};
 			name = Release;
 		};
-		0428F2B12DFDBDA500CFF1DB /* Debug */ = {
+		0428F2B12DFDBDA500CFF1DB /* Debug configuration for PBXNativeTarget "CopyShotUITests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -495,7 +481,7 @@
 			};
 			name = Debug;
 		};
-		0428F2B22DFDBDA500CFF1DB /* Release */ = {
+		0428F2B22DFDBDA500CFF1DB /* Release configuration for PBXNativeTarget "CopyShotUITests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -517,37 +503,33 @@
 		0428F2832DFDBDA300CFF1DB /* Build configuration list for PBXProject "CopyShot" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				0428F2A82DFDBDA500CFF1DB /* Debug */,
-				0428F2A92DFDBDA500CFF1DB /* Release */,
+				0428F2A82DFDBDA500CFF1DB /* Debug configuration for PBXProject "CopyShot" */,
+				0428F2A92DFDBDA500CFF1DB /* Release configuration for PBXProject "CopyShot" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		0428F2AA2DFDBDA500CFF1DB /* Build configuration list for PBXNativeTarget "CopyShot" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				0428F2AB2DFDBDA500CFF1DB /* Debug */,
-				0428F2AC2DFDBDA500CFF1DB /* Release */,
+				0428F2AB2DFDBDA500CFF1DB /* Debug configuration for PBXNativeTarget "CopyShot" */,
+				0428F2AC2DFDBDA500CFF1DB /* Release configuration for PBXNativeTarget "CopyShot" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		0428F2AD2DFDBDA500CFF1DB /* Build configuration list for PBXNativeTarget "CopyShotTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				0428F2AE2DFDBDA500CFF1DB /* Debug */,
-				0428F2AF2DFDBDA500CFF1DB /* Release */,
+				0428F2AE2DFDBDA500CFF1DB /* Debug configuration for PBXNativeTarget "CopyShotTests" */,
+				0428F2AF2DFDBDA500CFF1DB /* Release configuration for PBXNativeTarget "CopyShotTests" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		0428F2B02DFDBDA500CFF1DB /* Build configuration list for PBXNativeTarget "CopyShotUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				0428F2B12DFDBDA500CFF1DB /* Debug */,
-				0428F2B22DFDBDA500CFF1DB /* Release */,
+				0428F2B12DFDBDA500CFF1DB /* Debug configuration for PBXNativeTarget "CopyShotUITests" */,
+				0428F2B22DFDBDA500CFF1DB /* Release configuration for PBXNativeTarget "CopyShotUITests" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
