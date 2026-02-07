@@ -1,0 +1,51 @@
+name: 'Create DMG'
+description: 'Creates a DMG with a window layout and drag-to-Applications UI'
+
+inputs:
+  app_path:
+    description: 'Path to the .app bundle to package'
+    required: true
+  dmg_output_path:
+    description: 'Output path for the generated DMG file'
+    required: true
+  volname:
+    description: 'Volume name for the DMG'
+    required: false
+    default: 'CopyShot'
+
+runs:
+  using: composite
+  steps:
+    - name: Install create-dmg
+      shell: bash
+      run: |
+        brew install create-dmg
+
+    - name: Stage app for DMG
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf dmg-stage
+        mkdir -p dmg-stage
+        cp -R "${{ inputs.app_path }}" "dmg-stage/CopyShot.app"
+        ln -s /Applications "dmg-stage/Applications"
+
+    - name: Create drag-to-Applications DMG
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Ensure output directory exists
+        mkdir -p "$(dirname "${{ inputs.dmg_output_path }}")"
+
+        # Window and icon sizes/positions are in pixels.
+        create-dmg \
+          --volname "${{ inputs.volname }}" \
+          --window-pos 200 120 \
+          --window-size 700 450 \
+          --icon-size 140 \
+          --icon "CopyShot.app" 180 225 \
+          --icon "Applications" 520 225 \
+          --hide-extension "CopyShot.app" \
+          "${{ inputs.dmg_output_path }}" \
+          "dmg-stage"

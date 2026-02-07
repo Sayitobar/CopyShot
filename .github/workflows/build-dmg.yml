@@ -32,6 +32,7 @@ jobs:
             clean build
 
       - name: Locate .app
+        id: locate_app
         run: |
           set -euo pipefail
           APP_PATH="$(find build/Build/Products/Release -maxdepth 1 -name "*.app" -print -quit)"
@@ -41,27 +42,19 @@ jobs:
             exit 1
           fi
           echo "APP_PATH=${APP_PATH}" >> $GITHUB_ENV
+          echo "app_path=${APP_PATH}" >> "$GITHUB_OUTPUT"
 
       - name: Ad-hoc codesign (.app)
         run: |
           set -euo pipefail
-          codesign --force --deep --sign - "$APP_PATH"
-          codesign --verify --deep --strict "$APP_PATH"
+          codesign --force --deep --sign - "${{ steps.locate_app.outputs.app_path }}"
+          codesign --verify --deep --strict "${{ steps.locate_app.outputs.app_path }}"
 
       - name: Create DMG
-        run: |
-          set -euo pipefail
-
-          mkdir -p dist
-          STAGE_DIR="$(mktemp -d)"
-          cp -R "$APP_PATH" "$STAGE_DIR/CopyShot.app"
-
-          hdiutil create \
-            -volname "CopyShot" \
-            -srcfolder "$STAGE_DIR" \
-            -ov \
-            -format UDZO \
-            "dist/CopyShot-latest-main.dmg"
+        uses: ./.github/actions/create-dmg
+        with:
+          app_path: ${{ steps.locate_app.outputs.app_path }}
+          dmg_output_path: dist/CopyShot-latest-main.dmg
 
       - name: Upload artifact (DMG)
         uses: actions/upload-artifact@v4
