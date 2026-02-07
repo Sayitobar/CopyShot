@@ -21,6 +21,15 @@ runs:
       run: |
         brew install create-dmg
 
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      shell: bash
+      run: pip install Pillow
+
     - name: Stage app for DMG
       shell: bash
       run: |
@@ -30,7 +39,12 @@ runs:
         cp -R "${{ inputs.app_path }}" "dmg-stage/CopyShot.app"
         ln -s /Applications "dmg-stage/Applications"
 
-    - name: Create drag-to-Applications DMG
+    - name: Generate background image
+      shell: bash
+      run: |
+        python3 .github/actions/create-dmg/scripts/generate_background.py "dmg-stage/background.png"
+
+    - name: Create polished drag-to-Applications DMG
       shell: bash
       run: |
         set -euo pipefail
@@ -41,8 +55,9 @@ runs:
         # Window and icon sizes/positions are in pixels.
         create-dmg \
           --volname "${{ inputs.volname }}" \
-          --window-pos 200 120 \
-          --window-size 700 450 \
+          --background "dmg-stage/background.png" \
+          --window-pos 400 300 \
+          --window-size 700 500 \
           --icon-size 140 \
           --icon "CopyShot.app" 180 225 \
           --icon "Applications" 520 225 \
