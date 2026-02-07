@@ -47,7 +47,7 @@ runs:
                 
                 # Combine original (2x) and downscaled (1x) into a multi-resolution TIFF
                 # @2x image must be named with @2x for some tools, but tiffutil -cathidpi loves simple inputs
-                tiffutil -cathidpi "dmg-stage/background_1x.jpg" "${{ inputs.dmg_background_path }}" -out "dmg-stage/background.tiff"
+                tiffutil -cathidpicheck "dmg-stage/background_1x.jpg" "${{ inputs.dmg_background_path }}" -out "dmg-stage/background.tiff"
                 
                 echo "Created multi-resolution background.tiff"
             else
