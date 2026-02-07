@@ -44,6 +44,7 @@ jobs:
           echo "APP_PATH=${APP_PATH}" >> $GITHUB_ENV
 
       - name: Determine version string
+        id: version
         run: |
           set -euo pipefail
           # If triggered by tag, use the tag name (v1.2.3). Otherwise use a timestamp.
@@ -54,6 +55,7 @@ jobs:
           fi
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "DMG_NAME=CopyShot-${VERSION}.dmg" >> $GITHUB_ENV
+          echo "dmg_name=CopyShot-${VERSION}.dmg" >> "$GITHUB_OUTPUT"
 
       - name: Ad-hoc codesign (.app)
         run: |
@@ -88,6 +90,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/${{ env.DMG_NAME }}
-            dist/${{ env.DMG_NAME }}.sha256
+            dist/${{ steps.version.outputs.dmg_name }}
+            dist/${{ steps.version.outputs.dmg_name }}.sha256
           generate_release_notes: true
