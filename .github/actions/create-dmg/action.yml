@@ -36,17 +36,23 @@ runs:
         
         # Copy background image if provided and exists
         if [ -f "${{ inputs.dmg_background_path }}" ]; then
-            cp "${{ inputs.dmg_background_path }}" "dmg-stage/background.jpg"
-            
-            # Check image width to determine if it's Retina (@2x) (1400px)
-            WIDTH=$(sips -g pixelWidth "dmg-stage/background.jpg" | awk '/pixelWidth/ {print $2}')
+            # Check image width to determine if it's Retina (@2x)
+            WIDTH=$(sips -g pixelWidth "${{ inputs.dmg_background_path }}" | awk '/pixelWidth/ {print $2}')
             
             if [ "$WIDTH" -gt 700 ]; then
-                echo "Detected high-resolution background ($WIDTH px width). Setting DPI to 144 for Retina display."
-                sips -s dpiHeight 144.0 -s dpiWidth 144.0 "dmg-stage/background.jpg"
+                echo "Detected high-resolution background ($WIDTH px width). Creating multi-resolution TIFF."
+                
+                # Create a temporary downscaled 1x version (700x500)
+                sips -z 500 700 "${{ inputs.dmg_background_path }}" --out "dmg-stage/background_1x.jpg"
+                
+                # Combine original (2x) and downscaled (1x) into a multi-resolution TIFF
+                # @2x image must be named with @2x for some tools, but tiffutil -cathidpi loves simple inputs
+                tiffutil -cathidpi "dmg-stage/background_1x.jpg" "${{ inputs.dmg_background_path }}" -out "dmg-stage/background.tiff"
+                
+                echo "Created multi-resolution background.tiff"
             else
-                echo "Detected standard-resolution background ($WIDTH px width). Keeping standard DPI."
-                sips -s dpiHeight 72.0 -s dpiWidth 72.0 "dmg-stage/background.jpg"
+                echo "Detected standard-resolution background ($WIDTH px width). Using as-is."
+                cp "${{ inputs.dmg_background_path }}" "dmg-stage/background.tiff"
             fi
         else
             echo "::warning::Background image not found at ${{ inputs.dmg_background_path }}. DMG will be created without custom background."
@@ -71,8 +77,8 @@ runs:
           --hide-extension "CopyShot.app"
         )
         
-        if [ -f "dmg-stage/background.jpg" ]; then
-            ARGS+=(--background "dmg-stage/background.jpg")
+        if [ -f "dmg-stage/background.tiff" ]; then
+            ARGS+=(--background "dmg-stage/background.tiff")
         fi
         
         # Window and icon sizes/positions are in pixels.
