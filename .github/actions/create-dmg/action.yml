@@ -37,8 +37,17 @@ runs:
         # Copy background image if provided and exists
         if [ -f "${{ inputs.dmg_background_path }}" ]; then
             cp "${{ inputs.dmg_background_path }}" "dmg-stage/background.jpg"
-            # Resize background to match window size exactly (700x500)
-            sips -z 500 700 "dmg-stage/background.jpg"
+            
+            # Check image width to determine if it's Retina (@2x) (1400px)
+            WIDTH=$(sips -g pixelWidth "dmg-stage/background.jpg" | awk '/pixelWidth/ {print $2}')
+            
+            if [ "$WIDTH" -gt 700 ]; then
+                echo "Detected high-resolution background ($WIDTH px width). Setting DPI to 144 for Retina display."
+                sips -s dpiHeight 144.0 -s dpiWidth 144.0 "dmg-stage/background.jpg"
+            else
+                echo "Detected standard-resolution background ($WIDTH px width). Keeping standard DPI."
+                sips -s dpiHeight 72.0 -s dpiWidth 72.0 "dmg-stage/background.jpg"
+            fi
         else
             echo "::warning::Background image not found at ${{ inputs.dmg_background_path }}. DMG will be created without custom background."
         fi
@@ -60,6 +69,7 @@ runs:
           --icon "CopyShot.app" 180 225
           --icon "Applications" 520 225
           --hide-extension "CopyShot.app"
+          --no-toolbar
         )
         
         if [ -f "dmg-stage/background.jpg" ]; then
