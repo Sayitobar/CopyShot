@@ -37,6 +37,8 @@ runs:
         # Copy background image if provided and exists
         if [ -f "${{ inputs.dmg_background_path }}" ]; then
             cp "${{ inputs.dmg_background_path }}" "dmg-stage/background.jpg"
+            # Resize background to match window size exactly (700x500)
+            sips -z 500 700 "dmg-stage/background.jpg"
         else
             echo "::warning::Background image not found at ${{ inputs.dmg_background_path }}. DMG will be created without custom background."
         fi
