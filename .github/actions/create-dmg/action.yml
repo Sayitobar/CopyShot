@@ -34,6 +34,9 @@ runs:
         cp -R "${{ inputs.app_path }}" "dmg-stage/CopyShot.app"
         ln -s /Applications "dmg-stage/Applications"
         
+        # Create a hidden .background directory
+        mkdir -p "dmg-stage/.background"
+        
         # Copy background image if provided and exists
         if [ -f "${{ inputs.dmg_background_path }}" ]; then
             # Check image width to determine if it's Retina (@2x)
@@ -43,16 +46,15 @@ runs:
                 echo "Detected high-resolution background ($WIDTH px width). Creating multi-resolution TIFF."
                 
                 # Create a temporary downscaled 1x version (700x500)
-                sips -z 500 700 "${{ inputs.dmg_background_path }}" --out "dmg-stage/background_1x.jpg"
+                sips -z 500 700 "${{ inputs.dmg_background_path }}" --out "dmg-stage/.background/background_1x.jpg"
                 
                 # Combine original (2x) and downscaled (1x) into a multi-resolution TIFF
-                # @2x image must be named with @2x for some tools, but tiffutil -cathidpi loves simple inputs
-                tiffutil -cathidpicheck "dmg-stage/background_1x.jpg" "${{ inputs.dmg_background_path }}" -out "dmg-stage/background.tiff"
+                tiffutil -cathidpicheck "dmg-stage/.background/background_1x.jpg" "${{ inputs.dmg_background_path }}" -out "dmg-stage/.background/background.tiff"
                 
                 echo "Created multi-resolution background.tiff"
             else
                 echo "Detected standard-resolution background ($WIDTH px width). Using as-is."
-                cp "${{ inputs.dmg_background_path }}" "dmg-stage/background.tiff"
+                cp "${{ inputs.dmg_background_path }}" "dmg-stage/.background/background.tiff"
             fi
         else
             echo "::warning::Background image not found at ${{ inputs.dmg_background_path }}. DMG will be created without custom background."
@@ -77,8 +79,8 @@ runs:
           --hide-extension "CopyShot.app"
         )
         
-        if [ -f "dmg-stage/background.tiff" ]; then
-            ARGS+=(--background "dmg-stage/background.tiff")
+        if [ -f "dmg-stage/.background/background.tiff" ]; then
+            ARGS+=(--background "dmg-stage/.background/background.tiff")
         fi
         
         # Window and icon sizes/positions are in pixels.
