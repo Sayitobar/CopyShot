@@ -183,15 +183,9 @@ struct CopyShotMenu: View {
         
         Divider()
         
-        if #available(macOS 14.0, *) {
-            Button("Settings...") {
-                NSApp.activate(ignoringOtherApps: true)
-                openSettings()
-            }
-        } else {
-            SettingsLink {
-                Text("Settings...")
-            }
+        Button("Settings...") {
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
         }
         
         Divider()

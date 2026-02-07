@@ -1,0 +1,93 @@
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-dmg:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Build (Release)
+        run: |
+          set -euo pipefail
+          xcodebuild -list
+
+          SCHEME="CopyShot"
+
+          xcodebuild \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath build \
+            clean build
+
+      - name: Locate .app
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Build/Products/Release -maxdepth 1 -name "*.app" -print -quit)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "Could not find .app in build/Build/Products/Release"
+            ls -la build/Build/Products/Release || true
+            exit 1
+          fi
+          echo "APP_PATH=${APP_PATH}" >> $GITHUB_ENV
+
+      - name: Determine version string
+        run: |
+          set -euo pipefail
+          # If triggered by tag, use the tag name (v1.2.3). Otherwise use a timestamp.
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="manual-$(date +%Y%m%d-%H%M)"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "DMG_NAME=CopyShot-${VERSION}.dmg" >> $GITHUB_ENV
+
+      - name: Ad-hoc codesign (.app)
+        run: |
+          set -euo pipefail
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --verify --deep --strict "$APP_PATH"
+
+      - name: Create DMG
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          STAGE_DIR="$(mktemp -d)"
+          cp -R "$APP_PATH" "$STAGE_DIR/CopyShot.app"
+          ln -s /Applications "$STAGE_DIR/Applications"
+
+          hdiutil create \
+            -volname "CopyShot" \
+            -srcfolder "$STAGE_DIR" \
+            -ov \
+            -format UDZO \
+            "dist/${DMG_NAME}"
+
+      - name: Create SHA256 checksum
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 "${DMG_NAME}" > "${DMG_NAME}.sha256"
+          ls -la
+
+      - name: Upload DMG + checksum to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/${{ env.DMG_NAME }}
+            dist/${{ env.DMG_NAME }}.sha256
+          generate_release_notes: true

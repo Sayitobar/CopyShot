@@ -1,0 +1,71 @@
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-dmg:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: xcodebuild -version
+
+      - name: Build (Release)
+        run: |
+          set -euo pipefail
+          xcodebuild -list
+
+          SCHEME="CopyShot"
+
+          xcodebuild \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath build \
+            clean build
+
+      - name: Locate .app
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Build/Products/Release -maxdepth 1 -name "*.app" -print -quit)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "Could not find .app in build/Build/Products/Release"
+            ls -la build/Build/Products/Release || true
+            exit 1
+          fi
+          echo "APP_PATH=${APP_PATH}" >> $GITHUB_ENV
+
+      - name: Ad-hoc codesign (.app)
+        run: |
+          set -euo pipefail
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --verify --deep --strict "$APP_PATH"
+
+      - name: Create DMG
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          STAGE_DIR="$(mktemp -d)"
+          cp -R "$APP_PATH" "$STAGE_DIR/CopyShot.app"
+
+          hdiutil create \
+            -volname "CopyShot" \
+            -srcfolder "$STAGE_DIR" \
+            -ov \
+            -format UDZO \
+            "dist/CopyShot-latest-main.dmg"
+
+      - name: Upload artifact (DMG)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CopyShot-latest-main-dmg
+          path: dist/CopyShot-latest-main.dmg
+          if-no-files-found: error
