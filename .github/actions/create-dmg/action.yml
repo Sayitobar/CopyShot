@@ -69,7 +69,6 @@ runs:
           --icon "CopyShot.app" 180 225
           --icon "Applications" 520 225
           --hide-extension "CopyShot.app"
-          --no-toolbar
         )
         
         if [ -f "dmg-stage/background.jpg" ]; then
