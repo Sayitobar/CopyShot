@@ -12,6 +12,10 @@ inputs:
     description: 'Volume name for the DMG'
     required: false
     default: 'CopyShot'
+  dmg_background_path:
+    description: 'Path to the background image for the DMG'
+    required: false
+    default: '.github/actions/create-dmg/background.jpg'
 
 runs:
   using: composite
@@ -21,15 +25,6 @@ runs:
       run: |
         brew install create-dmg
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-
-    - name: Install dependencies
-      shell: bash
-      run: pip install Pillow
-
     - name: Stage app for DMG
       shell: bash
       run: |
@@ -38,11 +33,13 @@ runs:
         mkdir -p dmg-stage
         cp -R "${{ inputs.app_path }}" "dmg-stage/CopyShot.app"
         ln -s /Applications "dmg-stage/Applications"
-
-    - name: Generate background image
-      shell: bash
-      run: |
-        python3 .github/actions/create-dmg/scripts/generate_background.py "dmg-stage/background.png"
+        
+        # Copy background image if provided and exists
+        if [ -f "${{ inputs.dmg_background_path }}" ]; then
+            cp "${{ inputs.dmg_background_path }}" "dmg-stage/background.jpg"
+        else
+            echo "::warning::Background image not found at ${{ inputs.dmg_background_path }}. DMG will be created without custom background."
+        fi
 
     - name: Create polished drag-to-Applications DMG
       shell: bash
@@ -51,16 +48,24 @@ runs:
 
         # Ensure output directory exists
         mkdir -p "$(dirname "${{ inputs.dmg_output_path }}")"
-
+        
+        # Build create-dmg command args
+        ARGS=(
+          --volname "${{ inputs.volname }}"
+          --window-pos 400 300
+          --window-size 700 500
+          --icon-size 140
+          --icon "CopyShot.app" 180 225
+          --icon "Applications" 520 225
+          --hide-extension "CopyShot.app"
+        )
+        
+        if [ -f "dmg-stage/background.jpg" ]; then
+            ARGS+=(--background "dmg-stage/background.jpg")
+        fi
+        
         # Window and icon sizes/positions are in pixels.
         create-dmg \
-          --volname "${{ inputs.volname }}" \
-          --background "dmg-stage/background.png" \
-          --window-pos 400 300 \
-          --window-size 700 500 \
-          --icon-size 140 \
-          --icon "CopyShot.app" 180 225 \
-          --icon "Applications" 520 225 \
-          --hide-extension "CopyShot.app" \
+          "${ARGS[@]}" \
           "${{ inputs.dmg_output_path }}" \
           "dmg-stage"
