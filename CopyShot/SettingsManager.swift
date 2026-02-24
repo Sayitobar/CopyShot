@@ -10,6 +10,7 @@ import Vision
 import Carbon
 import AppKit // Import for NSEvent
 import SwiftUI
+import ServiceManagement
 
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system = "System"
@@ -35,6 +36,7 @@ enum SettingsKeys {
     static let captureHotkey = "captureHotkey"
     static let textPreviewLimit = "textPreviewLimit"
     static let appAppearance = "appAppearance"
+    static let playNotificationSound = "playNotificationSound"
 }
 
 // Using an enum for the recognition level makes our code safer and clearer.
@@ -112,34 +114,85 @@ class SettingsManager: ObservableObject {
         }
     }
     
+    @Published var playNotificationSound: Bool {
+        didSet {
+            UserDefaults.standard.set(playNotificationSound, forKey: SettingsKeys.playNotificationSound)
+        }
+    }
+    
+    @Published var launchAtLogin: Bool {
+        didSet {
+            if #available(macOS 13.0, *) {
+                do {
+                    if launchAtLogin {
+                        if SMAppService.mainApp.status == .notRegistered {
+                            try SMAppService.mainApp.register()
+                        }
+                    } else {
+                        try SMAppService.mainApp.unregister()
+                    }
+                } catch {
+                    debugPrint("Failed to update launch at login status: \(error)")
+                }
+            }
+        }
+    }
+    
     private init() {
-        // Initialize all properties with defaults first
-        let savedLevel = UserDefaults.standard.integer(forKey: SettingsKeys.recognitionLevel)
-        self.recognitionLevel = RecognitionLevel(rawValue: savedLevel) ?? .accurate
+        // MARK: - Initial Settings Check & Assignment
+        // Here we assign the default values for the first time the app is launched.
+        // If a setting does not exist in UserDefaults (is nil), we provide the fallback default.
         
-        // Default to true for better accuracy, allow user to change.
+        // Recognition Level (Default: Accurate)
+        if UserDefaults.standard.object(forKey: SettingsKeys.recognitionLevel) == nil {
+            self.recognitionLevel = .accurate
+        } else {
+            let savedLevel = UserDefaults.standard.integer(forKey: SettingsKeys.recognitionLevel)
+            self.recognitionLevel = RecognitionLevel(rawValue: savedLevel) ?? .accurate
+        }
+        
+        // Language Correction (Default: True)
         if UserDefaults.standard.object(forKey: SettingsKeys.usesLanguageCorrection) == nil {
             self.usesLanguageCorrection = true
-        }
-        else {
+        } else {
             self.usesLanguageCorrection = UserDefaults.standard.bool(forKey: SettingsKeys.usesLanguageCorrection)
         }
         
+        // Languages (Default: English)
         self.recognitionLanguages = UserDefaults.standard.stringArray(forKey: SettingsKeys.recognitionLanguages) ?? ["en-US"]
         
-        // Initialize hotkeys with defaults first
+        // Hotkeys (Default: ⌘⇧C)
         self.captureHotkey = HotkeyConfig.defaultCapture
-        
-        // Then load saved values if they exist
         if let savedCaptureHotkey = Self.loadHotkey(forKey: SettingsKeys.captureHotkey) {
             self.captureHotkey = savedCaptureHotkey
         }
         
-        self.textPreviewLimit = UserDefaults.standard.integer(forKey: SettingsKeys.textPreviewLimit) == 0 ? 50 : UserDefaults.standard.integer(forKey: SettingsKeys.textPreviewLimit)
+        // Text Preview Limit (Default: 50)
+        let limit = UserDefaults.standard.integer(forKey: SettingsKeys.textPreviewLimit)
+        self.textPreviewLimit = limit == 0 ? 50 : limit
         
-        // Load appearance
-        let savedAppearance = UserDefaults.standard.string(forKey: SettingsKeys.appAppearance) ?? AppAppearance.system.rawValue
-        self.appearance = AppAppearance(rawValue: savedAppearance) ?? .system
+        // App Appearance (Default: System)
+        if UserDefaults.standard.object(forKey: SettingsKeys.appAppearance) == nil {
+            self.appearance = .system
+        } else {
+            let savedAppearance = UserDefaults.standard.string(forKey: SettingsKeys.appAppearance) ?? AppAppearance.system.rawValue
+            self.appearance = AppAppearance(rawValue: savedAppearance) ?? .system
+        }
+        
+        // Notification Sound
+        if UserDefaults.standard.object(forKey: SettingsKeys.playNotificationSound) == nil {
+            self.playNotificationSound = true
+        } else {
+            self.playNotificationSound = UserDefaults.standard.bool(forKey: SettingsKeys.playNotificationSound)
+        }
+        
+        // Launch at Login (Default: False)
+        // SMAppService defaults to .notRegistered on first launch, ensuring it stays disabled natively.
+        if #available(macOS 13.0, *) {
+            self.launchAtLogin = SMAppService.mainApp.status == .enabled
+        } else {
+            self.launchAtLogin = false
+        }
     }
     
     // Helper property to get available languages from Vision

@@ -88,6 +88,15 @@ struct SettingsView: View {
             // General Behavior
             SettingsCard(title: "General", icon: "gearshape") {
                  VStack(spacing: 16) {
+                     // Launch at Login
+                     SettingsRow(label: "Launch at Login", icon: "power", iconColor: .green) {
+                         Toggle("", isOn: $settings.launchAtLogin)
+                             .toggleStyle(.switch)
+                     }
+                     .help("Automatically start CopyShot when you log in to your Mac.")
+                     
+                     Divider()
+                     
                      // Appearance
                      SettingsRow(label: "Appearance", icon: "circle.lefthalf.filled", iconColor: .primary) {
                          Picker("", selection: $settings.appearance) {
@@ -102,8 +111,8 @@ struct SettingsView: View {
                      
                      Divider()
                      
-                     // Recognition Speed
-                     SettingsRow(label: "Recognition Speed", icon: "speedometer", iconColor: .blue) {
+                     // Recognition Level
+                     SettingsRow(label: "Recognition Level", icon: "target", iconColor: .blue) {
                          Picker("", selection: $settings.recognitionLevel) {
                              ForEach(RecognitionLevel.allCases) { level in
                                  Text(level.description).tag(level)
@@ -112,7 +121,7 @@ struct SettingsView: View {
                          .pickerStyle(.segmented)
                          .frame(width: 200)
                      }
-                     .help("Fast: faster but less accurate. Accurate: slower but better results.")
+                     .help("Fast: Character detection & small ML model. Accurate: Neural network for human-like string & line recognition.")
                      
                      Divider()
                      
@@ -121,7 +130,7 @@ struct SettingsView: View {
                          Toggle("", isOn: $settings.usesLanguageCorrection)
                              .toggleStyle(.switch)
                      }
-                     .help("Automatically corrects recognized text. Disable this for code or technical symbols.")
+                     .help("Applies Natural Language Processing (NLP) to minimize misreadings. Note: Not supported for Chinese. Disable this for code or technical symbols.")
                      
                      Divider()
                      
@@ -134,6 +143,15 @@ struct SettingsView: View {
                              .focused($isPreviewLimitFocused)
                      }
                      .help("Maximum characters to show in the notification. Set to 0 for full text.")
+                     
+                     Divider()
+                     
+                     // Notification Sound
+                     SettingsRow(label: "Play Sounds", icon: "speaker.wave.2.fill", iconColor: .orange) {
+                         Toggle("", isOn: $settings.playNotificationSound)
+                             .toggleStyle(.switch)
+                     }
+                     .help("Play a sound when a capture succeeds or fails.")
                  }
             }
             

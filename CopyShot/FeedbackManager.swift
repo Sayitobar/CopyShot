@@ -28,13 +28,15 @@ class FeedbackManager {
         )
         
         // Play sound directly
-        if let soundName = soundName {
+        if let soundName = soundName, SettingsManager.shared.playNotificationSound {
             NSSound(named: soundName)?.play()
         }
     }
     
     // A simple, static function to play the screenshot sound.
     static func playSuccessSound() {
-        NSSound(named: "Pop")?.play() // Changed to a less intrusive sound
+        if SettingsManager.shared.playNotificationSound {
+            NSSound(named: "Pop")?.play()
+        }
     }
 }

@@ -65,7 +65,13 @@ class NotificationPresenter: ObservableObject {
             isVisible: Binding(
                 get: { [weak self] in self?.isShowingNotification ?? false },
                 set: { [weak self] newValue in self?.isShowingNotification = newValue }
-            )
+            ),
+            onHoverEnter: { [weak self] in 
+                self?.cancelDismissTimer() 
+            },
+            onHoverExit: { [weak self] in 
+                self?.startDismissTimer() 
+            }
         )
         .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
 
@@ -76,13 +82,23 @@ class NotificationPresenter: ObservableObject {
         let fittingSize = hostingView?.fittingSize ?? NSSize(width: 400, height: 100) // Fallback size
         updateWindowFrame(with: fittingSize)
         
+        notificationWindow?.alphaValue = 1.0 // Reset alpha before showing
         notificationWindow?.makeKeyAndOrderFront(nil)
         
+        startDismissTimer()
+    }
+    
+    func startDismissTimer() {
+        dismissTimer?.cancel()
         dismissTimer = Just(true)
-            .delay(for: .seconds(duration), scheduler: DispatchQueue.main)
+            .delay(for: .seconds(3.0), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.hideNotificationWithAnimation()
             }
+    }
+    
+    func cancelDismissTimer() {
+        dismissTimer?.cancel()
     }
     
     func dismissNotification() {
@@ -95,10 +111,14 @@ class NotificationPresenter: ObservableObject {
     
     private func hideNotificationWithAnimation() {
         // Trigger fade-out animation by setting isShowingNotification to false
-        isShowingNotification = false
+        self.isShowingNotification = false
         
-        // After animation, dismiss the window
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { // Match animation duration
+        // Fast fadeout: animate window alpha to 0 for a native fade
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            self.notificationWindow?.animator().alphaValue = 0
+        }) {
             self.dismissNotification()
         }
     }
@@ -106,11 +126,16 @@ class NotificationPresenter: ObservableObject {
     private func updateWindowFrame(with size: NSSize) {
         guard let screen = NSScreen.main, let window = notificationWindow else { return }
         
-        let windowWidth = size.width + 40 // Add padding for horizontal margins
-        let windowHeight = size.height + 40 // Add padding for vertical margins
+        let windowWidth = size.width
+        let windowHeight = size.height
         
-        let xPos = screen.frame.maxX - windowWidth - 20
-        let yPos = screen.frame.maxY - windowHeight - 20
+        // CustomNotificationView now has 20pt right padding and 8pt top padding.
+        // We want approx 16pt margin from the right edge -> window right goes 4pt past the screen edge
+        let xPos = screen.frame.maxX - windowWidth + 4
+        // We want the visual box to be 8 points below the menu bar. 
+        // Because the top padding is exactly 8pt, we just touch the window top to the menu bar (visibleFrame.maxY).
+        // This avoids macOS forcefully clamping/snapping the window out of the menu bar reserved space!
+        let yPos = screen.visibleFrame.maxY - windowHeight + 4
         
         window.setFrame(NSRect(x: xPos, y: yPos, width: windowWidth, height: windowHeight), display: true)
     }

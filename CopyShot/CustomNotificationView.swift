@@ -14,52 +14,67 @@ struct CustomNotificationView: View {
     let iconName: String
     let accentColor: Color
     
+    @Environment(\.colorScheme) var colorScheme
+    
     @Binding var isVisible: Bool
     
+    var onHoverEnter: (() -> Void)? = nil
+    var onHoverExit: (() -> Void)? = nil
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top) {
-                Image(systemName: iconName)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(accentColor)
-                    .padding(.trailing, 4)
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: iconName)
+                .font(.system(size: 24, weight: .medium))
+                .foregroundColor(accentColor)
+                .frame(width: 30)
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
                 
-                VStack(alignment: .leading) {
-                    Text(title)
-                        .font(.headline)
-                        .fontWeight(.semibold)
+                if let subtitle = subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
                         .foregroundColor(.primary)
-                    
-                    if let subtitle = subtitle, !subtitle.isEmpty {
-                        // Subtitle: Explanation text (Brighter, Primary)
-                        Text(subtitle)
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    
-                    // Body: Preview Text (Darker, Secondary)
-                    Text(bodyText)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
+                
+                if !bodyText.isEmpty {
+                    Text(bodyText)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(4)
+                }
             }
-            .padding(12)
-            .background(Color(.controlBackgroundColor))
-            .cornerRadius(12)
-            .shadow(radius: 8)
-            .padding(.horizontal)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(minHeight: 60)
-            .offset(y: isVisible ? 0 : -150)
-            .animation(.spring(response: 0.5, dampingFraction: 0.7, blendDuration: 0), value: isVisible)
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .topTrailing)
+        .padding(16)
+        .frame(width: 344, alignment: .topLeading)
+        .background(.regularMaterial) // Frosty glass material look
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)) // Authentic Apple continuous corners
+        // The signature Apple light boundary
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(colorScheme == .dark ? Color(white: 1.0, opacity: 0.3) : Color(white: 0.0, opacity: 0.1), lineWidth: 0.5)
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 15, x: 0, y: 8)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 28)
+        .padding(.top, 14)
+        .offset(y: isVisible ? 0 : -100)
         .opacity(isVisible ? 1 : 0)
-        .animation(.easeIn(duration: 0.2), value: isVisible)
+        .animation(.spring(response: 0.5, dampingFraction: 0.7, blendDuration: 0), value: isVisible)
+        .onHover { isHovering in
+            if isHovering {
+                onHoverEnter?()
+            } else {
+                onHoverExit?()
+            }
+        }
         .onAppear {
             isVisible = true
         }

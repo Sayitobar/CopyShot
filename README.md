@@ -43,6 +43,11 @@
 
 ---
 
+## Privacy
+CopyShot respects your privacy. All OCR processing happens locally on your device using Apple's Vision framework. The app **does not have internet access** and **does not access any of your personal files**. Your captured images and extracted text remain entirely on your Mac.
+
+---
+
 ## Setting Up and Running from Source
 If you'd like to build and run CopyShot yourself on macOS, here's how to get started.
 
