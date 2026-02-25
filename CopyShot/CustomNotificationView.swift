@@ -25,27 +25,27 @@ struct CustomNotificationView: View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: iconName)
                 .font(.system(size: 24, weight: .medium))
-                .foregroundColor(accentColor)
+                .foregroundStyle(accentColor)
                 .frame(width: 30)
             
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.headline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                 
                 if let subtitle = subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.subheadline)
                         .fontWeight(.medium)
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 
                 if !bodyText.isEmpty {
                     Text(bodyText)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .lineLimit(4)
                 }

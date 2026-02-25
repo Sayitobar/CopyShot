@@ -1,5 +1,5 @@
 <div align="center" style="display: flex; justify-content: center; align-items: center; margin-bottom: 20px;">
-  <img src="CopyShot/Assets.xcassets/AppIcon.appiconset/v2.png" width="140" alt="CopyShot Logo" style="margin-right: 20px; vertical-align: middle;"/>
+  <img src="CopyShot/Assets.xcassets/AppIcon.appiconset/v2.5.png" width="140" alt="CopyShot Logo" style="margin-right: 20px; vertical-align: middle;"/>
   <div style="text-align: left;">
     <h1 align="center" style="margin: 0;">CopyShot</h1>
     <p align="center" style="margin: 0; color: gray;">Fast OCR in your Mac's menu bar</p>

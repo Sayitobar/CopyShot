@@ -72,7 +72,7 @@ struct SettingsView: View {
             
             // Reset window position to center
             if let window = NSApp.windows.first(where: { $0.delegate is AppDelegate == false }) {
-                 window.center()
+                window.center()
             }
             
             if settings.recognitionLanguages.isEmpty {
@@ -263,6 +263,81 @@ struct SettingsView: View {
             Text("Select → Extract → Clipboard")
                 .font(.body)
                 .fontWeight(.medium)
+            
+            VStack(spacing: 12) {
+                Button(action: {
+                    NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+                }) {
+                    HStack {
+                        Image(systemName: "app.badge")
+                            .frame(width: 20)
+                            .foregroundColor(.blue)
+                        Text("Show App in Finder")
+                        Spacer()
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(width: 240)
+                    .background(Color(.controlBackgroundColor))
+                    .cornerRadius(8)
+                    .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+                }
+                .buttonStyle(.plain)
+                .help("Locate the CopyShot app bundle in Finder.")
+                
+                Button(action: {
+                    let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                    let appDir = appSupportURL.appendingPathComponent(Bundle.main.bundleIdentifier ?? "CopyShot")
+                    try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: appDir.path)
+                }) {
+                    HStack {
+                        Image(systemName: "folder")
+                            .frame(width: 20)
+                            .foregroundColor(.blue)
+                        Text("Open App Data Folder")
+                        Spacer()
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(width: 240)
+                    .background(Color(.controlBackgroundColor))
+                    .cornerRadius(8)
+                    .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+                }
+                .buttonStyle(.plain)
+                .help("View stored preferences and data.")
+                
+                if let url = URL(string: "https://github.com/Sayitobar/CopyShot") {
+                    Link(destination: url) {
+                        HStack {
+                            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                                .frame(width: 20)
+                                .foregroundColor(.blue)
+                            Text("Source Code (GitHub)")
+                            Spacer()
+                            Image(systemName: "link")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .frame(width: 240)
+                        .background(Color(.controlBackgroundColor))
+                        .cornerRadius(8)
+                        .shadow(color: .black.opacity(0.04), radius: 2, x: 0, y: 1)
+                    }
+                    .buttonStyle(.plain)
+                    .help("View the project's source code.")
+                }
+            }
+            .padding(.top, 8)
             
             VStack(spacing: 4) {
                 Text(verbatim: "\(Calendar.current.component(.year, from: Date())) CopyShot, by Sayitobar.")

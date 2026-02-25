@@ -151,7 +151,7 @@ struct CopyShotApp: App {
                 // This prevents large images from blowing up the menu bar size.
                 if let nsImage = NSImage(named: state.rawValue) {
                     Image(nsImage: {
-                        nsImage.size = NSSize(width: 18, height: 18)
+                        nsImage.size = NSSize(width: 22, height: 22)
                         return nsImage
                     }())
                 } else {

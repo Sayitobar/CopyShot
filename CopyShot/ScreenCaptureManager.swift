@@ -95,12 +95,14 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         
         log("Identifying target display for capture...")
         
-        // Match the selection screen to a SCDisplay based on frame origin and size.
-        guard let targetDisplay = content.displays.first(where: {
-            $0.frame.origin.x == selection.screen.frame.origin.x &&
-            $0.frame.width == selection.screen.frame.width &&
-            $0.frame.height == selection.screen.frame.height
-        }) else {
+        guard let screenNumber = selection.screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            log("Error: Could not get screen number from NSScreen.", type: .error)
+            complete(with: nil)
+            return
+        }
+        
+        // Match the selection screen to a SCDisplay based on the hardware display ID.
+        guard let targetDisplay = content.displays.first(where: { $0.displayID == screenNumber }) else {
             log("Error: Could not find a matching SCDisplay for the selected screen.", type: .error)
             complete(with: nil)
             return

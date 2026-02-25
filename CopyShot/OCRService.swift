@@ -51,7 +51,9 @@ class OCRService {
             let sortedObservations = observations.sorted {
                 // Primary sort by Y-coordinate (top-to-bottom)
                 // Note: Vision's Y-coordinate is from the bottom-left, so we compare the max Y.
-                if abs($0.boundingBox.maxY - $1.boundingBox.maxY) > 0.02 { // Tolerance for slight misalignment
+                // We use a dynamic threshold (50% of the height) to handle different text sizes.
+                let threshold = $0.boundingBox.height * 0.5
+                if abs($0.boundingBox.maxY - $1.boundingBox.maxY) > threshold {
                     return $0.boundingBox.maxY > $1.boundingBox.maxY
                 }
                 // Secondary sort by X-coordinate (left-to-right) for items on the same line
@@ -62,12 +64,12 @@ class OCRService {
                 guard let topCandidate = observation.topCandidates(1).first else { continue }
                 
                 let currentY = observation.boundingBox.midY
+                let boxHeight = observation.boundingBox.height
                 
                 if let previousY = lastY {
                     // Check if the vertical distance is large enough to be a new line.
-                    // The threshold (0.02) may need tuning, but it's a good start.
-                    // It represents 2% of the image's height.
-                    if abs(currentY - previousY) > 0.02 {
+                    // We use a comparative threshold relative to the text size.
+                    if abs(currentY - previousY) > (boxHeight * 0.5) {
                         recognizedText += "\n"
                     } else {
                         // It's on the same line, add a space.

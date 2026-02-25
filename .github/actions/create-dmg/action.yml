@@ -20,18 +20,35 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install create-dmg
+    - name: Install create-dmg (if needed)
       shell: bash
       run: |
-        brew install create-dmg
+        set -euo pipefail
+        export HOMEBREW_NO_AUTO_UPDATE=1
+        export HOMEBREW_NO_INSTALL_CLEANUP=1
+
+        if command -v create-dmg >/dev/null 2>&1; then
+          echo "create-dmg already installed."
+          create-dmg --version || true
+        else
+          brew install create-dmg
+        fi
 
     - name: Stage app for DMG
       shell: bash
       run: |
         set -euo pipefail
+
+        APP_PATH="${{ inputs.app_path }}"
+        if [ ! -d "$APP_PATH" ]; then
+          echo "::error::app_path does not exist or is not a directory: $APP_PATH"
+          exit 1
+        fi
+        APP_NAME="$(basename "$APP_PATH")"
+
         rm -rf dmg-stage
         mkdir -p dmg-stage
-        cp -R "${{ inputs.app_path }}" "dmg-stage/CopyShot.app"
+        cp -R "$APP_PATH" "dmg-stage/$APP_NAME"
         ln -s /Applications "dmg-stage/Applications"
         
         # Create a hidden .background directory
@@ -65,6 +82,9 @@ runs:
       run: |
         set -euo pipefail
 
+        APP_PATH="${{ inputs.app_path }}"
+        APP_NAME="$(basename "$APP_PATH")"
+
         # Ensure output directory exists
         mkdir -p "$(dirname "${{ inputs.dmg_output_path }}")"
         
@@ -74,9 +94,9 @@ runs:
           --window-pos 400 300
           --window-size 700 500
           --icon-size 140
-          --icon "CopyShot.app" 180 225
+          --icon "$APP_NAME" 180 225
           --icon "Applications" 520 225
-          --hide-extension "CopyShot.app"
+          --hide-extension "$APP_NAME"
         )
         
         if [ -f "dmg-stage/.background/background.tiff" ]; then
