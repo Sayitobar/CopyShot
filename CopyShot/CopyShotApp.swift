@@ -33,7 +33,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     title: "Capture Cancelled",
                     body: "The screen capture was cancelled or failed.",
                     iconName: "xmark.circle.fill",
-                    accentColor: .gray,
+                    accentColor: .adaptiveRed,
                     soundName: "Frog" // Custom sound for cancellation
                 )
                 self.resetIcon()
@@ -52,8 +52,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         FeedbackManager.showNotification(
                             title: "No Text Found",
                             body: "The selected area did not contain any recognizable text.",
-                            iconName: "xmark.circle.fill",
-                            accentColor: .red,
+                            iconName: "questionmark.circle.fill",
+                            accentColor: .adaptiveBlue,
                             soundName: "Bottle" // Custom sound for no text found
                         )
                         self.resetIcon()
@@ -72,8 +72,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                             title: "Text Copied",
                             subtitle: "The recognized text has been copied to your clipboard.",
                             body: previewText,
+                            fullBody: recognizedText,
                             iconName: "checkmark.circle.fill",
-                            accentColor: .green,
+                            accentColor: .adaptiveGreen,
                             soundName: "Funk"
                         )
                         self.setSuccessIcon()
@@ -84,7 +85,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         title: "OCR Failed",
                         body: error.localizedDescription,
                         iconName: "exclamationmark.triangle.fill",
-                        accentColor: .orange,
+                        accentColor: .adaptiveOrange,
                         soundName: "Sosumi" // Custom sound for OCR failure
                     )
                     self.resetIcon()

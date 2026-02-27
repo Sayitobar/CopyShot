@@ -15,8 +15,9 @@ class NotificationPresenter: ObservableObject {
     @Published var notificationTitle: String = ""
     @Published var notificationSubtitle: String? = nil
     @Published var notificationBody: String = ""
+    @Published var notificationFullBody: String? = nil
     @Published var notificationIconName: String = ""
-    @Published var notificationAccentColor: Color = .blue
+    @Published var notificationAccentColor: Color = .orange
     
     private var dismissTimer: AnyCancellable?
     private var notificationWindow: NSWindow?
@@ -26,6 +27,7 @@ class NotificationPresenter: ObservableObject {
         title: String,
         subtitle: String? = nil,
         body: String,
+        fullBody: String? = nil,
         iconName: String,
         accentColor: Color,
         duration: TimeInterval = 3.0
@@ -36,6 +38,7 @@ class NotificationPresenter: ObservableObject {
         notificationTitle = title
         notificationSubtitle = subtitle
         notificationBody = body
+        notificationFullBody = fullBody
         notificationIconName = iconName
         notificationAccentColor = accentColor
         isShowingNotification = true
@@ -60,6 +63,7 @@ class NotificationPresenter: ObservableObject {
             title: notificationTitle,
             subtitle: notificationSubtitle,
             bodyText: notificationBody,
+            fullBodyText: notificationFullBody,
             iconName: notificationIconName,
             accentColor: accentColor,
             isVisible: Binding(
@@ -71,6 +75,13 @@ class NotificationPresenter: ObservableObject {
             },
             onHoverExit: { [weak self] in 
                 self?.startDismissTimer() 
+            },
+            onClose: { [weak self] in
+                self?.hideNotificationWithAnimation()
+            },
+            onHeightChange: { [weak self] newHeight in
+                guard let self = self, let _ = self.hostingView else { return }
+                self.updateWindowFrame(with: NSSize(width: 384, height: newHeight))
             }
         )
         .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)

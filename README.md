@@ -39,7 +39,7 @@
 | **Image Preprocessing** | Grayscale and contrast adjustments for better results. |
 | **Settings Interface** | Built with SwiftUI for a smooth, native feel. |
 | **Notifications** | Includes sound, haptics, icons, and a preview you can tweak. |
-| **Resource Friendly** | Uses minimal CPU and RAM. |
+| **Resource Friendly** | Uses minimal CPU and RAM. It's also very small in size. |
 
 ---
 
@@ -48,11 +48,32 @@ CopyShot respects your privacy. All OCR processing happens locally on your devic
 
 ---
 
-## Setting Up and Running from Source
-If you'd like to build and run CopyShot yourself on macOS, here's how to get started.
+## Installation
+
+> **Note:** CopyShot requires **macOS 14 (Sonoma)** or later.
+
+1. **Download the App:**
+   Go to the [Releases](https://github.com/Sayitobar/CopyShot/releases) page and download the latest version of `CopyShot`.
+
+2. **Open the App:**
+   - Because CopyShot is an open-source tool and not distributed through the Mac App Store, macOS Gatekeeper will block it when tried to open with a message saying *"CopyShot Not Opened, Apple could not verify CopyShot is free of malware that may harm your Mac or compromise your privacy."*.
+   - **To bypass this:** Go to `System Settings > Privacy & Security`, scroll down to the bottom, and click **Open Anyway** where it mentions CopyShot was blocked. You only need to do this once.
+
+3. **Grant Screen Recording Permission:**
+   - The first time you use CopyShot (by pressing the hotkey), macOS will block it from capturing your screen.
+   - Go to `System Settings > Privacy & Security > Screen & System Audio Recording`.
+   - Find **CopyShot** in the list and **enable the toggle**.
+   - **Important:** After granting permission, **Quit and Reopen** CopyShot for the changes to take effect.
+
+
+## Running from source (for developers)
+<details>
+  <summary>Click to expand</summary>
+
+If you'd like to edit, build and run CopyShot yourself on macOS, here's how to get started.
 
 ### Prerequisites
-- macOS
+- macOS 14+
 - Xcode (free from the App Store)
 
 ### Steps
@@ -86,9 +107,10 @@ If you'd like to build and run CopyShot yourself on macOS, here's how to get sta
 
 Once it's set up, CopyShot should run & appear in your menu bar. If you're going through all this, thanks for checking it out, you probably know your way around, so feel free to tweak it.
 
----
+</details>
 
-## Ideas for Future Features (Suggestions Welcome)
+
+## Ideas for future features (suggestions welcome)
 
 <details>
   <summary>Click to expand</summary>
@@ -117,8 +139,6 @@ Once it's set up, CopyShot should run & appear in your menu bar. If you're going
 - VoiceOver & other accessibility refinements.
 
 </details>
-
----
 
 ## About the Project
 

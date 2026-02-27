@@ -122,10 +122,11 @@ class SettingsManager: ObservableObject {
     
     @Published var launchAtLogin: Bool {
         didSet {
+            guard oldValue != launchAtLogin else { return }
             if #available(macOS 13.0, *) {
                 do {
                     if launchAtLogin {
-                        if SMAppService.mainApp.status == .notRegistered {
+                        if SMAppService.mainApp.status != .enabled {
                             try SMAppService.mainApp.register()
                         }
                     } else {
@@ -133,6 +134,9 @@ class SettingsManager: ObservableObject {
                     }
                 } catch {
                     debugPrint("Failed to update launch at login status: \(error)")
+                    DispatchQueue.main.async {
+                        self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
+                    }
                 }
             }
         }
