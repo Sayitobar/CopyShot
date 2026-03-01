@@ -144,7 +144,7 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .zIndex(3)
         }
-        .frame(width: 600, alignment: .top)
+        .frame(width: 500, alignment: .top)
         .padding(.top, -28) // Explicitly shunts the content UP into the Transparent Titlebar void WITHOUT increasing the bound height!
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
@@ -292,28 +292,29 @@ struct SettingsRow<Control: View>: View {
     @State private var tooltipHovered = false
     
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            // Right-aligned label, aligned to top of the content
+        HStack(alignment: .top, spacing: 12) {
+            // Right-aligned label column (fixed width)
             Text(label)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.primary)
-                .frame(width: 150, alignment: .trailing)
-                .padding(.top, 4) // Nudge down slightly so text aligns with the middle of controls like Toggles or Buttons
+                .frame(width: 140, alignment: .leading)
+                .padding(.top, 3) // Nudge down slightly so text aligns with the middle of controls like Toggles or Buttons
             
-            // Left-aligned control
+            // Right-aligned control column (fixed width)
             control()
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: 200, alignment: .trailing)
             
-            // Tooltip on the right
+            // Tooltip column (fixed width)
             if let tooltip = tooltip {
                 InfoTooltip(text: tooltip, onHoverStateChange: { hovered in
                     tooltipHovered = hovered
                 })
-                .padding(.top, 2)
+                .frame(width: 18, alignment: .leading)
             } else {
-                Spacer().frame(width: 18) // Placeholder for alignment if no tooltip
+                Spacer().frame(width: 18) // Placeholder for alignment
             }
         }
+        .frame(maxWidth: .infinity) // Center the fixed-width group in the window
         .zIndex(tooltipHovered ? 1000 : zIndexValue) // Elevates row priority wildly when hovering tooltip
     }
 }
@@ -377,7 +378,7 @@ struct CaptureSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 240) // Fixed to be consistent width
+                .frame(width: 200) // Fixed to be consistent width
             }
             
             SettingsRow(label: "Language Correction", tooltip: "Applies Natural Language Processing (NLP) to minimize misreadings.\nNote: Not supported for Chinese. Disable this for code or technical symbols.", zIndexValue: 9) {
@@ -404,7 +405,7 @@ struct CaptureSettingsView: View {
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 10))
                         }
-                        .frame(width: 240) // Match width of picker
+                        .frame(width: 200) // Match width of picker
                         .padding(.vertical, 4)
                         .background(Color(.controlBackgroundColor))
                         .cornerRadius(5)
@@ -428,7 +429,7 @@ struct CaptureSettingsView: View {
                                 }
                             }
                         }
-                        .frame(width: 240) // Match width of container
+                        .frame(width: 200) // Match width of container
                         .background(Color(.controlBackgroundColor).opacity(0.5))
                         .cornerRadius(6)
                         .overlay(
@@ -492,12 +493,12 @@ struct AboutSettingsView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 16) {
+            HStack(spacing: 26) {
                 // App Logo
                 if let appIcon = NSImage(named: "AppIcon") ?? NSImage(named: NSImage.applicationIconName) {
                     Image(nsImage: appIcon)
                         .resizable()
-                        .frame(width: 88, height: 88)
+                        .frame(width: 128, height: 128)
                         .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
                 } else {
                     Image(systemName: "camera.viewfinder")
@@ -508,54 +509,56 @@ struct AboutSettingsView: View {
                 // App Name, Version, and Copyright aligned left
                 VStack(alignment: .leading, spacing: 4) {
                     Text("CopyShot")
-                        .font(.system(size: 28, weight: .bold))
-                        .padding(.bottom, 4)
+                        .font(.system(size: 32, weight: .bold))
+                        .padding(.bottom, 2)
                     
                     Text("Version \(appVersion)")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
                     
                     Text(verbatim: "Sayitobar, \(Calendar.current.component(.year, from: Date()))")
-                        .font(.system(size: 9))
+                        .font(.system(size: 13))
                         .foregroundColor(.secondary.opacity(0.6))
                 }
+                .padding(.leading, -10)
             }
             .padding(.horizontal) // Keeps the top section from touching the very edge of the window
             .padding(.bottom, 32)
 
             // Divider now stretches indefinitely
             Divider()
-                .padding(.horizontal, -20)
-                .padding(.bottom, 32)
+                .padding(.horizontal, -30)
+                .padding(.bottom, 10)
             
-            // Grid layout for buttons - now isolated below the divider
-            HStack(spacing: 16) {
-                VStack(spacing: 12) {
-                    AboutButton(title: "Show in Finder", icon: "app.badge") {
-                        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
-                    }
-                    
-                    AboutButton(title: "App Data Folder", icon: "folder") {
-                        let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-                        let appDir = appSupportURL.appendingPathComponent(Bundle.main.bundleIdentifier ?? "CopyShot")
-                        try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
-                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: appDir.path)
-                    }
+            // All four buttons in a single row — icon-only, expand on hover
+            HStack(spacing: 10) {
+                // Local file openers (left)
+                AboutButton(title: "Show in Finder", icon: "app.badge") {
+                    NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
                 }
                 
-                VStack(spacing: 12) {
-                    AboutButton(title: "Check Updates", icon: "arrow.triangle.2.circlepath") {
-                        // Update check functionality
-                    }
-                    
-                    if let url = URL(string: "https://github.com/Sayitobar/CopyShot") {
-                        AboutButton(title: "Source Code", icon: "link") {
-                            NSWorkspace.shared.open(url)
-                        }
+                AboutButton(title: "App Data Folder", icon: "folder") {
+                    let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                    let appDir = appSupportURL.appendingPathComponent(Bundle.main.bundleIdentifier ?? "CopyShot")
+                    try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
+                    NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: appDir.path)
+                }
+                
+                Spacer()
+                
+                // Online buttons (right)
+                AboutButton(title: "Check Updates", icon: "arrow.triangle.2.circlepath") {
+                    // Update check functionality
+                }
+                
+                if let url = URL(string: "https://github.com/Sayitobar/CopyShot") {
+                    AboutButton(title: "Source Code", icon: "link") {
+                        NSWorkspace.shared.open(url)
                     }
                 }
             }
-            .padding(.vertical, -18)
+            .padding(.horizontal, -12)  // move buttons closer to the side walls to leave a 10px gap
+            .padding(.bottom, -22)  // move buttons closer to the bottom wall to leave a 10px gap
         }
         .frame(maxWidth: .infinity)
     }
@@ -571,21 +574,22 @@ struct AboutButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: isHovered ? 6 : 0) {
                 Image(systemName: icon)
                     .frame(width: 16)
                     .foregroundColor(.blue)
                     .font(.system(size: 13, weight: .medium))
                 
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(isHovered ? .primary : .primary.opacity(0.9))
-                
-                Spacer()
+                if isHovered {
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .leading)))
+                }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, isHovered ? 12 : 10)
             .padding(.vertical, 8)
-            .frame(width: 180)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(white: colorScheme == .dark ? 0.25 : 0.85).opacity(isHovered ? 1.0 : 0.7))
@@ -593,7 +597,7 @@ struct AboutButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovered in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(.easeInOut(duration: 0.2)) {
                 isHovered = hovered
             }
         }
@@ -625,7 +629,7 @@ struct InfoTooltip: View {
                     .font(.system(size: 13))
                     .foregroundColor(.primary)
                     .padding(14)
-                    .frame(width: 240, alignment: .leading)
+                    .frame(width: 200, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
     }
