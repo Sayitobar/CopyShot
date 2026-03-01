@@ -165,16 +165,18 @@ struct CopyShotApp: App {
         
         // This defines the window that opens when the user clicks the SettingsLink.
         // It's a separate, secondary scene.
-        Settings {
+        Window("Settings", id: "settings") {
             SettingsView()
                 .environmentObject(settings) // Pass the settings manager to the view
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
     }
 }
 
 struct CopyShotMenu: View {
     var appDelegate: AppDelegate
-    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     
     var body: some View {
         Button("Capture Text") {
@@ -186,8 +188,9 @@ struct CopyShotMenu: View {
         
         Button("Settings...") {
             NSApp.activate(ignoringOtherApps: true)
-            openSettings()
+            openWindow(id: "settings")
         }
+        .keyboardShortcut(",", modifiers: .command)
         
         Divider()
         

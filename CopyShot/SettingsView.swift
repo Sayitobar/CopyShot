@@ -36,10 +36,17 @@ struct SlideFadeModifier: ViewModifier {
 
 extension AnyTransition {
     static var slideFade: AnyTransition {
-        .modifier(
+        let insertion = AnyTransition.modifier(
             active: SlideFadeModifier(offset: 15, opacity: 0),
             identity: SlideFadeModifier(offset: 0, opacity: 1)
         )
+        // Disappear instantly without any movement or linear fade!
+        let removal = AnyTransition.modifier(
+            active: SlideFadeModifier(offset: 0, opacity: 0),
+            identity: SlideFadeModifier(offset: 0, opacity: 1)
+        ).animation(.linear(duration: 0))
+        
+        return .asymmetric(insertion: insertion, removal: removal)
     }
 }
 
@@ -49,10 +56,15 @@ struct SettingsView: View {
     @State private var visibleTab: SettingsTab = .general
     @Environment(\.colorScheme) var colorScheme
     
+    // Toggle content transitions ON/OFF (Slide under tab bar)
+    // Does NOT restrict the tab button highlighter slide.
+    private let enableContentAnimations = true
+    
     var body: some View {
         ZStack(alignment: .top) {
             // Dummy container to snap the layout dimensions instantly WITHOUT animation
             // This forces the NSWindow to resize abruptly without intermediate bouncy frames
+            // 1. CONTENT LAYER
             ZStack(alignment: .top) {
                 switch layoutTab {
                 case .general: GeneralSettingsView().hidden()
@@ -65,10 +77,10 @@ struct SettingsView: View {
             .padding(.horizontal, 24)
             .animation(nil, value: layoutTab) // Layout dimensions snap immediately
             .frame(maxWidth: .infinity, alignment: .top)
-            .background(Color(NSColor.windowBackgroundColor))
+            .padding(.top, 68) // Exact height of the Tab Bar wrapper
             .overlay(alignment: .top) {
                 ZStack(alignment: .top) {
-                    // 1. Linear Gradient Shadow that behaves exclusively as an internal under-lay, drawing BEFORE the content and tooltips!
+                    // Linear Gradient Shadow that behaves exclusively as an internal under-lay, drawing BEFORE the content!
                     LinearGradient(
                         colors: [Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), .clear],
                         startPoint: .top,
@@ -77,26 +89,26 @@ struct SettingsView: View {
                     .frame(height: 6)
                     .allowsHitTesting(false)
                     
-                    // 2. The actual visual content gracefully fades and slides entirely inside the precisely-snapped bounds
+                    // The actual visual content gracefully fades and slides entirely inside the precisely-snapped bounds
                     ZStack(alignment: .top) {
+                        let activeTransition = enableContentAnimations ? AnyTransition.slideFade : .identity
                         switch visibleTab {
-                        case .general: GeneralSettingsView().transition(.slideFade)
-                        case .capture: CaptureSettingsView().transition(.slideFade)
-                        case .notifications: NotificationsSettingsView().transition(.slideFade)
-                        case .about: AboutSettingsView().transition(.slideFade)
+                        case .general: GeneralSettingsView().transition(activeTransition)
+                        case .capture: CaptureSettingsView().transition(activeTransition)
+                        case .notifications: NotificationsSettingsView().transition(activeTransition)
+                        case .about: AboutSettingsView().transition(activeTransition)
                         }
                     }
                     .padding(.vertical, 32)
                     .padding(.horizontal, 24)
                     .frame(maxWidth: .infinity, alignment: .top)
                 }
+                .padding(.top, 68) // Match the boundary offset exactly
             }
-        }
-        .frame(width: 600, alignment: .top)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Color(NSColor.windowBackgroundColor))
-        .toolbar {
-            ToolbarItem(placement: .principal) {
+            .zIndex(1)
+            
+            // 2. TAB BAR LAYER (ZIndex 2 so it physically overlays the rendering stack)
+            VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     ForEach(SettingsTab.allCases, id: \.self) { tab in
                         TabButton(tab: tab, isSelected: visibleTab == tab) {
@@ -116,8 +128,26 @@ struct SettingsView: View {
                         .frame(width: 86, height: 46)
                         .offset(x: index * (86 + 8))
                 }
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+                .frame(maxWidth: .infinity)
+                
+                Divider() // Separates our Tab Bar from our Content
+                    .opacity(0.5)
             }
+            .zIndex(2)
+            
+            // 3. NATIVE CUSTOM CLOSE BUTTON
+            CustomCloseButton()
+                .padding(.top, 16)
+                .padding(.leading, 18)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .zIndex(3)
         }
+        .frame(width: 600, alignment: .top)
+        .padding(.top, -28) // Explicitly shunts the content UP into the Transparent Titlebar void WITHOUT increasing the bound height!
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .preferredColorScheme(settings.appearance.colorScheme)
         .id(settings.appearance)
         .onAppear {
@@ -134,11 +164,25 @@ struct SettingsView: View {
     private func applyWindowConfiguration() {
         DispatchQueue.main.async {
             for window in NSApp.windows {
-                // Settings Window explicitly natively integrates the Toolbar, so we ONLY wipe the string itself
                 guard window.styleMask.contains(.titled), window.styleMask.contains(.closable) else { continue }
                 
                 window.title = "" 
                 window.titleVisibility = .hidden
+                window.titlebarAppearsTransparent = true
+                window.styleMask.insert(.fullSizeContentView)
+                window.isMovableByWindowBackground = true
+                
+                // Nuke the NSToolbar that `Settings` implicitly creates which forcefully draws a background!
+                window.toolbar = nil
+                
+                // Completely hide Apple's native macOS Traffic Lights!
+                window.standardWindowButton(.closeButton)?.isHidden = true
+                window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+                window.standardWindowButton(.zoomButton)?.isHidden = true
+                
+                // Erase native OS background completely to prevent color mismatch gaps!
+                window.isOpaque = false
+                window.backgroundColor = .clear
                 
                 if #available(macOS 11.0, *) {
                     window.titlebarSeparatorStyle = .none // Seamlessly unifies the background!
@@ -190,6 +234,46 @@ struct TabButton: View {
             )
         }
         .buttonStyle(.plain)
+        .onHover { hovered in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isHovered = hovered
+            }
+        }
+    }
+}
+
+// MARK: - Custom Close Button
+struct CustomCloseButton: View {
+    @State private var isHovered = false
+    @Environment(\.controlActiveState) var controlActiveState
+    @Environment(\.colorScheme) var colorScheme
+    
+    var body: some View {
+        let isActive = controlActiveState != .inactive
+        let activeColor = isHovered ? Color(red: 255/255, green: 80/255, blue: 75/255) : Color(red: 255/255, green: 95/255, blue: 86/255)
+        
+        Button(action: {
+            if let window = NSApp.windows.first(where: { $0.styleMask.contains(.titled) && $0.delegate is AppDelegate == false }) {
+                window.close()
+            }
+        }) {
+            Circle()
+                .fill(isActive ? activeColor : Color(white: colorScheme == .dark ? 0.3 : 0.8))
+                .frame(width: 12, height: 12)
+                .overlay(
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .foregroundColor(Color.black.opacity(0.6))
+                        .offset(x: 0.25, y: 0) // Nudge slightly right to perfectly center
+                        .opacity(isHovered && isActive ? 1 : 0)
+                )
+                .overlay(
+                    Circle()
+                        .stroke(Color.black.opacity(isActive ? 0.12 : 0.05), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
         .onHover { hovered in
             withAnimation(.easeInOut(duration: 0.1)) {
                 isHovered = hovered
