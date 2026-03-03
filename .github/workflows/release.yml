@@ -85,3 +85,4 @@ jobs:
             dist/${{ steps.version.outputs.dmg_name }}
             dist/${{ steps.version.outputs.dmg_name }}.sha256
           generate_release_notes: true
+          draft: true
