@@ -38,13 +38,16 @@
 | **Vision OCR** | Accurate & Fast modes, with language correction option. |
 | **Image Preprocessing** | Grayscale and contrast adjustments for better results. |
 | **Settings Interface** | Built with SwiftUI for a smooth, native feel. |
+| **Auto-Update** | Background updates powered by Sparkle. |
 | **Notifications** | Includes sound, haptics, icons, and a preview you can tweak. |
 | **Resource Friendly** | Uses minimal CPU and RAM. It's also very small in size. |
 
 ---
 
 ## Privacy
-CopyShot respects your privacy. All OCR processing happens locally on your device using Apple's Vision framework. The app **does not have internet access** and **does not access any of your personal files**. Your captured images and extracted text remain entirely on your Mac.
+CopyShot respects your privacy. All OCR processing happens locally on your device using Apple's Vision framework. The app **does not access any of your personal files**. Your captured images and extracted text remain entirely on your Mac.
+
+*Network Note: Since v1.1, CopyShot requires outbound internet access exclusively and only to check for application updates securely via the Sparkle framework.*
 
 ---
 
@@ -121,7 +124,6 @@ Once it's set up, CopyShot should run & appear in your menu bar. If you're going
 
 ### OCR Improvements
 - Personal glossary for domain-specific terms.
-- Multi-language picker UI.
 - OCR history with instant search & re-copy.
 - Drag-and-drop image files into the app for OCR.
 - Advanced preprocessing: deskew, denoise, adaptive binarization...
@@ -135,15 +137,14 @@ Once it's set up, CopyShot should run & appear in your menu bar. If you're going
 
 ### Usability and Accessibility
 - Onboarding guide for first-time users.
-- Built-in help tips.
 - VoiceOver & other accessibility refinements.
 
 </details>
 
 ## About the Project
 
-CopyShot v1.0.0 was **live-coded with Gemini CLI**: Every line, refactor, and bug-fix was done with the help of Gemini.
-This small experiment shows how far AI-assisted software development has come.
+The first version of CopyShot (v1.0.0) was live-coded with Gemini CLI. Every line, refactor, and bug-fix was done with the help of Gemini. This small experiment showed how far AI-assisted software development has come.
+Now, the project is maintained with the help of a mix of AI tools and human oversight.
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
