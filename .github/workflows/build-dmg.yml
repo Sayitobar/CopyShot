@@ -55,7 +55,7 @@ jobs:
           dmg_output_path: dist/CopyShot-latest-main.dmg
 
       - name: Upload artifact (DMG)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: CopyShot-latest-main-dmg
           path: dist/CopyShot-latest-main.dmg
