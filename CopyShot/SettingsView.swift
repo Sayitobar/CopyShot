@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import Sparkle
 
 enum SettingsTab: String, CaseIterable {
     case general = "General"
@@ -52,6 +53,7 @@ extension AnyTransition {
 
 struct SettingsView: View {
     @EnvironmentObject var settings: SettingsManager
+    @EnvironmentObject var updaterViewModel: UpdaterViewModel
     @State private var layoutTab: SettingsTab = .general
     @State private var visibleTab: SettingsTab = .general
     @Environment(\.colorScheme) var colorScheme
@@ -70,7 +72,7 @@ struct SettingsView: View {
                 case .general: GeneralSettingsView().hidden()
                 case .capture: CaptureSettingsView().hidden()
                 case .notifications: NotificationsSettingsView().hidden()
-                case .about: AboutSettingsView().hidden()
+                case .about: AboutSettingsView(updaterViewModel: updaterViewModel).hidden()
                 }
             }
             .padding(.vertical, 32)
@@ -96,7 +98,7 @@ struct SettingsView: View {
                         case .general: GeneralSettingsView().transition(activeTransition)
                         case .capture: CaptureSettingsView().transition(activeTransition)
                         case .notifications: NotificationsSettingsView().transition(activeTransition)
-                        case .about: AboutSettingsView().transition(activeTransition)
+                        case .about: AboutSettingsView(updaterViewModel: updaterViewModel).transition(activeTransition)
                         }
                     }
                     .padding(.vertical, 32)
@@ -156,7 +158,7 @@ struct SettingsView: View {
             }
             applyWindowConfiguration()
         }
-        .onChange(of: colorScheme) { _ in
+        .onChange(of: colorScheme) {
             applyWindowConfiguration()
         }
     }
@@ -212,13 +214,13 @@ struct TabButton: View {
             VStack(spacing: 4) {
                 Image(systemName: tab.iconName)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(isSelected ? .blue : (isHovered ? .primary : .secondary))
+                    .foregroundStyle(isSelected ? .blue : (isHovered ? .primary : .secondary))
                     .animation(nil, value: isSelected) // Instant color swap, no interpolation during slide
                     .frame(height: 18)
                 
                 Text(tab.rawValue)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(isSelected ? .primary : (isHovered ? .primary : .secondary))
+                    .foregroundStyle(isSelected ? .primary : (isHovered ? .primary : .secondary))
                     .animation(nil, value: isSelected) // Instant color swap, no interpolation during slide
                     .frame(height: 14)
             }
@@ -263,7 +265,7 @@ struct CustomCloseButton: View {
                 .overlay(
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .bold, design: .rounded))
-                        .foregroundColor(Color.black.opacity(0.6))
+                        .foregroundStyle(Color.black.opacity(0.6))
                         .offset(x: 0.25, y: 0) // Nudge slightly right to perfectly center
                         .opacity(isHovered && isActive ? 1 : 0)
                 )
@@ -296,7 +298,7 @@ struct SettingsRow<Control: View>: View {
             // Right-aligned label column (fixed width)
             Text(label)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
                 .frame(width: 140, alignment: .leading)
                 .padding(.top, 3) // Nudge down slightly so text aligns with the middle of controls like Toggles or Buttons
             
@@ -322,6 +324,7 @@ struct SettingsRow<Control: View>: View {
 // MARK: - General Settings
 struct GeneralSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
+    @EnvironmentObject var updaterViewModel: UpdaterViewModel
     
     var body: some View {
         VStack(spacing: 24) {
@@ -331,7 +334,13 @@ struct GeneralSettingsView: View {
                     .labelsHidden()
             }
             
-            SettingsRow(label: "Appearance", tooltip: "Choose between Light, Dark, or System appearance.", zIndexValue: 9) {
+            SettingsRow(label: "Auto Update", tooltip: "Automatically check for new versions once a day in the background.", zIndexValue: 9) {
+                Toggle("", isOn: $updaterViewModel.automaticallyChecksForUpdates)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+            
+            SettingsRow(label: "Appearance", tooltip: "Choose between Light, Dark, or System appearance.", zIndexValue: 8) {
                 Picker("", selection: $settings.appearance) {
                     ForEach(AppAppearance.allCases) { appearance in
                         Text(appearance.rawValue).tag(appearance)
@@ -340,21 +349,6 @@ struct GeneralSettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(width: 200) // Fixed width for uniformity
-            }
-            
-            SettingsRow(label: "Capture Screenshot", tooltip: "Global hotkey to trigger screen capture.", zIndexValue: 8) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HotkeyField(hotkey: $settings.captureHotkey, placeholder: "Click to set")
-                        .frame(width: 200) // Match width of picker above
-                    
-                    Button("Reset Hotkey to Default") {
-                        settings.resetHotkeysToDefaults()
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.blue)
-                    .font(.system(size: 11))
-                    .padding(.leading, 2) // slight optical alignment
-                }
             }
         }
     }
@@ -370,6 +364,21 @@ struct CaptureSettingsView: View {
     
     var body: some View {
         VStack(spacing: 24) {
+            SettingsRow(label: "Capture Screenshot", tooltip: "Global hotkey to trigger screen capture.", zIndexValue: 11) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HotkeyField(hotkey: $settings.captureHotkey, placeholder: "Click to set")
+                        .frame(width: 200) // Match width of picker above
+                    
+                    Button("Reset Hotkey to Default") {
+                        settings.resetHotkeysToDefaults()
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+                    .font(.system(size: 11))
+                    .padding(.leading, 2) // slight optical alignment
+                }
+            }
+            
             SettingsRow(label: "Recognition Level", tooltip: "Fast: Character detection & small ML model.\nAccurate: Neural network for human-like string & line recognition.", zIndexValue: 10) {
                 Picker("", selection: $settings.recognitionLevel) {
                     ForEach(RecognitionLevel.allCases) { level in
@@ -400,7 +409,7 @@ struct CaptureSettingsView: View {
                     } label: {
                         HStack {
                             Text(availableLanguages.isEmpty ? "All added" : "Add Language...")
-                                .foregroundColor(availableLanguages.isEmpty ? .secondary : .primary)
+                                .foregroundStyle(availableLanguages.isEmpty ? .secondary : .primary)
                                 .font(.system(size: 12))
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 10))
@@ -408,7 +417,7 @@ struct CaptureSettingsView: View {
                         .frame(width: 200) // Match width of picker
                         .padding(.vertical, 4)
                         .background(Color(.controlBackgroundColor))
-                        .cornerRadius(5)
+                        .clipShape(.rect(cornerRadius: 5))
                         .overlay(
                             RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.2), lineWidth: 1)
                         )
@@ -431,7 +440,7 @@ struct CaptureSettingsView: View {
                         }
                         .frame(width: 200) // Match width of container
                         .background(Color(.controlBackgroundColor).opacity(0.5))
-                        .cornerRadius(6)
+                        .clipShape(.rect(cornerRadius: 6))
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
@@ -490,6 +499,7 @@ struct NotificationsSettingsView: View {
 // MARK: - About Settings
 struct AboutSettingsView: View {
     let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    @ObservedObject var updaterViewModel: UpdaterViewModel
     
     var body: some View {
         VStack(spacing: 0) {
@@ -514,11 +524,11 @@ struct AboutSettingsView: View {
                     
                     Text("Version \(appVersion)")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                     
                     Text(verbatim: "Sayitobar, \(Calendar.current.component(.year, from: Date()))")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary.opacity(0.6))
+                        .foregroundStyle(.secondary.opacity(0.6))
                 }
                 .padding(.leading, -10)
             }
@@ -548,8 +558,9 @@ struct AboutSettingsView: View {
                 
                 // Online buttons (right)
                 AboutButton(title: "Check Updates", icon: "arrow.triangle.2.circlepath") {
-                    // Update check functionality
+                    updaterViewModel.checkForUpdates()
                 }
+                .disabled(!updaterViewModel.canCheckForUpdates)
                 
                 if let url = URL(string: "https://github.com/Sayitobar/CopyShot") {
                     AboutButton(title: "Source Code", icon: "link") {
@@ -571,19 +582,20 @@ struct AboutButton: View {
     
     @State private var isHovered = false
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
     
     var body: some View {
         Button(action: action) {
             HStack(spacing: isHovered ? 6 : 0) {
                 Image(systemName: icon)
                     .frame(width: 16)
-                    .foregroundColor(.blue)
+                    .foregroundStyle(.blue)
                     .font(.system(size: 13, weight: .medium))
                 
                 if isHovered {
                     Text(title)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.primary)
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                         .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .leading)))
                 }
@@ -594,6 +606,7 @@ struct AboutButton: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(white: colorScheme == .dark ? 0.25 : 0.85).opacity(isHovered ? 1.0 : 0.7))
             )
+            .opacity(isEnabled ? 1.0 : 0.4)
         }
         .buttonStyle(.plain)
         .onHover { hovered in
@@ -615,7 +628,7 @@ struct InfoTooltip: View {
     var body: some View {
         Image(systemName: "info.circle")
             .font(.system(size: 14))
-            .foregroundColor(isHovered ? .primary : .secondary)
+            .foregroundStyle(isHovered ? .primary : .secondary)
             .padding(4)
             .contentShape(Rectangle()) // makes the padding area hoverable
             .onHover { hovered in
@@ -627,7 +640,7 @@ struct InfoTooltip: View {
             .popover(isPresented: $isHovered, arrowEdge: .leading) {
                 Text(text)
                     .font(.system(size: 13))
-                    .foregroundColor(.primary)
+                    .foregroundStyle(.primary)
                     .padding(14)
                     .frame(width: 200, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -653,7 +666,7 @@ struct HotkeyField: View {
             HStack {
                 Spacer()
                 Text(isCapturing ? "Press keys..." : hotkey.displayString)
-                    .foregroundColor(isCapturing ? .orange : .primary)
+                    .foregroundStyle(isCapturing ? .orange : .primary)
                     .font(.system(size: 13, weight: .medium))
                     .monospaced()
                 Spacer()
@@ -663,14 +676,14 @@ struct HotkeyField: View {
                         stopCapturing()
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .font(.caption)
                 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Color(.controlBackgroundColor))
-            .cornerRadius(6)
+            .clipShape(.rect(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
                     .stroke(isCapturing ? Color.orange : Color.clear, lineWidth: 1)
@@ -740,7 +753,7 @@ struct LanguageRow: View {
                     Button(action: onRemove) {
                         Image(systemName: "xmark")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .padding(4)
@@ -749,7 +762,7 @@ struct LanguageRow: View {
                 } else {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                         .opacity(0.5)
                 }
             }
@@ -768,5 +781,6 @@ struct SettingsView_Previews: PreviewProvider {
     static var previews: some View {
         SettingsView()
             .environmentObject(SettingsManager.shared)
+            .environmentObject(UpdaterViewModel())
     }
 }

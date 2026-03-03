@@ -80,9 +80,9 @@ class HotkeyManager: ObservableObject {
         )
         
         if status != noErr {
-            print("Error registering hotkey \(config.displayString): \(status)")
+            debugPrint("Error registering hotkey \(config.displayString): \(status)")
         } else {
-            print("Successfully registered hotkey: \(config.displayString)")
+            debugPrint("Successfully registered hotkey: \(config.displayString)")
         }
     }
     
@@ -111,7 +111,7 @@ class HotkeyManager: ObservableObject {
         }
     }
     
-    func handleHotkey(eventRef: EventRef?) {
+    fileprivate func handleHotkey(eventRef: EventRef?) {
         guard let eventRef = eventRef else { return }
         
         var hotKeyID = EventHotKeyID()

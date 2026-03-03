@@ -8,6 +8,10 @@
 import SwiftUI
 import ScreenCaptureKit
 
+// Shared CIContext to avoid expensive reallocation per frame.
+// Placed outside the class to avoid @MainActor isolation errors in Swift 6.
+private let sharedCIContext = CIContext()
+
 @MainActor
 class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
     
@@ -172,7 +176,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         
         let ciImage = CIImage(cvPixelBuffer: imageBuffer)
-        let context = CIContext()
+        let context = sharedCIContext
         
         // Convert to CGImage
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {

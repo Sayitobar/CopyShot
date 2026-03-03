@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Xcode version
         run: xcodebuild -version
@@ -79,7 +79,7 @@ jobs:
           ls -la
 
       - name: Upload DMG + checksum to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c062e08bd532815e2082a7c5848390f8e13be1e4 # v2.2.1
         with:
           files: |
             dist/${{ steps.version.outputs.dmg_name }}

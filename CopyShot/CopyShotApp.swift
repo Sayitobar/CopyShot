@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UserNotifications
+import Sparkle
 
 // By marking the AppDelegate with @MainActor, we ensure all its methods
 // and properties are on the main thread, resolving the core conflict.
@@ -132,6 +133,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 }
 
+import Combine
+
+// Wrapper class to make the Updater conform to ObservableObject for SwiftUI
+final class UpdaterViewModel: ObservableObject {
+    let controller: SPUStandardUpdaterController
+    @Published var canCheckForUpdates = false
+    @Published var automaticallyChecksForUpdates: Bool {
+        didSet {
+            controller.updater.automaticallyChecksForUpdates = automaticallyChecksForUpdates
+        }
+    }
+    private var cancellables = Set<AnyCancellable>()
+    
+    init() {
+        self.controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        self.automaticallyChecksForUpdates = self.controller.updater.automaticallyChecksForUpdates
+        
+        self.controller.updater.publisher(for: \.canCheckForUpdates)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] canCheck in
+                self?.canCheckForUpdates = canCheck
+            }
+            .store(in: &cancellables)
+    }
+    
+    func checkForUpdates() {
+        self.controller.checkForUpdates(nil)
+    }
+}
+
 @main
 struct CopyShotApp: App {
     // Keep the AppDelegate to manage the hotkey and background tasks.
@@ -140,11 +171,14 @@ struct CopyShotApp: App {
     // We need to access our settings to pass them to the SettingsView.
     @StateObject private var settings = SettingsManager.shared
     @StateObject private var notificationPresenter = FeedbackManager.shared.presenter
+    
+    // Sparkle auto-updater controller wrapper
+    @StateObject private var updaterViewModel = UpdaterViewModel()
 
     var body: some Scene {
         // This is the primary scene for a Menu Bar app.
         MenuBarExtra(content: {
-            CopyShotMenu(appDelegate: appDelegate)
+            CopyShotMenu(appDelegate: appDelegate, updaterViewModel: updaterViewModel)
         }, label: {
             let state = appDelegate.menuBarIconState
             if state == .idle {
@@ -168,6 +202,7 @@ struct CopyShotApp: App {
         Window("Settings", id: "settings") {
             SettingsView()
                 .environmentObject(settings) // Pass the settings manager to the view
+                .environmentObject(updaterViewModel) // Pass Sparkle to bindings
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -176,6 +211,7 @@ struct CopyShotApp: App {
 
 struct CopyShotMenu: View {
     var appDelegate: AppDelegate
+    @ObservedObject var updaterViewModel: UpdaterViewModel
     @Environment(\.openWindow) private var openWindow
     
     var body: some View {
@@ -192,6 +228,11 @@ struct CopyShotMenu: View {
         }
         .keyboardShortcut(",", modifiers: .command)
         
+        Button("Check for Updates...") {
+            updaterViewModel.checkForUpdates()
+        }
+        .disabled(!updaterViewModel.canCheckForUpdates)
+        
         Divider()
         
         Button("Quit CopyShot") {
@@ -199,8 +240,4 @@ struct CopyShotMenu: View {
         }
         .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
     }
-    
-    // Fallback for openSettings on older OS versions where the environment key might not be available or strictly typed?
-    // Actually @Environment(\.openSettings) is non-optional in signature but only available on 14.0+.
-    // The #available check guards the usage.
 }

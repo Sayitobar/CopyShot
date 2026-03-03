@@ -6,6 +6,10 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		04867A882F55091500BC5CAE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 04867A872F55091500BC5CAE /* Sparkle */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		0428F2972DFDBDA500CFF1DB /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,9 +33,22 @@
 		0428F2A02DFDBDA500CFF1DB /* CopyShotUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CopyShotUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		04867A8A2F57009D00BC5CAE /* Exceptions for "CopyShot" folder in "CopyShot" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0428F2872DFDBDA300CFF1DB /* CopyShot */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		0428F28A2DFDBDA300CFF1DB /* CopyShot */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				04867A8A2F57009D00BC5CAE /* Exceptions for "CopyShot" folder in "CopyShot" target */,
+			);
 			path = CopyShot;
 			sourceTree = "<group>";
 		};
@@ -51,6 +68,7 @@
 		0428F2852DFDBDA300CFF1DB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				04867A882F55091500BC5CAE /* Sparkle in Frameworks */,
 			);
 		};
 		0428F2932DFDBDA500CFF1DB /* Frameworks */ = {
@@ -103,6 +121,9 @@
 				0428F28A2DFDBDA300CFF1DB /* CopyShot */,
 			);
 			name = CopyShot;
+			packageProductDependencies = (
+				04867A872F55091500BC5CAE /* Sparkle */,
+			);
 			productName = CopyShot;
 			productReference = 0428F2882DFDBDA300CFF1DB /* CopyShot.app */;
 			productType = "com.apple.product-type.application";
@@ -181,6 +202,9 @@
 			);
 			mainGroup = 0428F27F2DFDBDA300CFF1DB;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				04867A862F55091500BC5CAE /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 0428F2892DFDBDA300CFF1DB /* Products */;
 			projectDirPath = "";
@@ -376,9 +400,20 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CopyShot/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = CopyShot;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -408,9 +443,20 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CopyShot/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = CopyShot;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -533,6 +579,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		04867A862F55091500BC5CAE /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		04867A872F55091500BC5CAE /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04867A862F55091500BC5CAE /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0428F2802DFDBDA300CFF1DB /* Project object */;
 }
