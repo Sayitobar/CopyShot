@@ -79,7 +79,7 @@ jobs:
           ls -la
 
       - name: Upload DMG + checksum to GitHub Release
-        uses: softprops/action-gh-release@c062e08bd532815e2082a7c5848390f8e13be1e4 # v2.2.1
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           files: |
             dist/${{ steps.version.outputs.dmg_name }}
