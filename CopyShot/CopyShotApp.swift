@@ -25,7 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 1. Set up the completion handler ONCE.
         // This is now safe because both the AppDelegate and the captureManager
         // are on the Main Actor.
-        captureManager.onCaptureComplete = { image in
+        captureManager.onCaptureComplete = { image, screen in
             debugPrint("--- AppDelegate: onCaptureComplete closure EXECUTED. ---")
             
             guard let capturedImage = image else {
@@ -35,7 +35,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     body: "The screen capture was cancelled or failed.",
                     iconName: "xmark.circle.fill",
                     accentColor: .adaptiveRed,
-                    soundName: "Frog" // Custom sound for cancellation
+                    soundName: "Frog", // Custom sound for cancellation
+                    targetScreen: screen
                 )
                 self.resetIcon()
                 return
@@ -55,7 +56,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                             body: "The selected area did not contain any recognizable text.",
                             iconName: "questionmark.circle.fill",
                             accentColor: .adaptiveBlue,
-                            soundName: "Bottle" // Custom sound for no text found
+                            soundName: "Bottle", // Custom sound for no text found
+                            targetScreen: screen
                         )
                         self.resetIcon()
                     } else {
@@ -76,7 +78,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                             fullBody: recognizedText,
                             iconName: "checkmark.circle.fill",
                             accentColor: .adaptiveGreen,
-                            soundName: "Funk"
+                            soundName: "Funk",
+                            targetScreen: screen
                         )
                         self.setSuccessIcon()
                     }
@@ -87,7 +90,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         body: error.localizedDescription,
                         iconName: "exclamationmark.triangle.fill",
                         accentColor: .adaptiveOrange,
-                        soundName: "Sosumi" // Custom sound for OCR failure
+                        soundName: "Sosumi", // Custom sound for OCR failure
+                        targetScreen: screen
                     )
                     self.resetIcon()
                 }

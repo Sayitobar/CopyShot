@@ -19,6 +19,8 @@ class NotificationPresenter: ObservableObject {
     @Published var notificationIconName: String = ""
     @Published var notificationAccentColor: Color = .orange
     
+    var targetScreen: NSScreen? = nil
+    
     private var dismissTimer: AnyCancellable?
     private var notificationWindow: NSWindow?
     private var hostingView: NSHostingView<AnyView>? // Keep a reference to the hosting view
@@ -30,10 +32,13 @@ class NotificationPresenter: ObservableObject {
         fullBody: String? = nil,
         iconName: String,
         accentColor: Color,
+        targetScreen: NSScreen? = nil,
         duration: TimeInterval = 3.0
     ) {
         // Dismiss any existing notification first
         dismissNotification()
+        
+        self.targetScreen = targetScreen
         
         notificationTitle = title
         notificationSubtitle = subtitle
@@ -83,18 +88,18 @@ class NotificationPresenter: ObservableObject {
                 guard let self = self, let _ = self.hostingView else { return }
                 self.updateWindowFrame(with: NSSize(width: 384, height: newHeight))
             }
-        )
-        .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
+        ).preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
 
-        hostingView = NSHostingView(rootView: AnyView(notificationView))
-        notificationWindow?.contentView = hostingView
+        let host = NSHostingView(rootView: AnyView(notificationView))
+        hostingView = host
+        notificationWindow?.contentView = host
         
         // Calculate fitting size and set window frame
         let fittingSize = hostingView?.fittingSize ?? NSSize(width: 400, height: 100) // Fallback size
         updateWindowFrame(with: fittingSize)
         
         notificationWindow?.alphaValue = 1.0 // Reset alpha before showing
-        notificationWindow?.makeKeyAndOrderFront(nil)
+        notificationWindow?.orderFrontRegardless()
         
         startDismissTimer()
     }
@@ -135,7 +140,7 @@ class NotificationPresenter: ObservableObject {
     }
     
     private func updateWindowFrame(with size: NSSize) {
-        guard let screen = NSScreen.main, let window = notificationWindow else { return }
+        guard let screen = targetScreen ?? NSScreen.main, let window = notificationWindow else { return }
         
         let windowWidth = size.width
         let windowHeight = size.height
@@ -148,6 +153,10 @@ class NotificationPresenter: ObservableObject {
         // This avoids macOS forcefully clamping/snapping the window out of the menu bar reserved space!
         let yPos = screen.visibleFrame.maxY - windowHeight + 4
         
-        window.setFrame(NSRect(x: xPos, y: yPos, width: windowWidth, height: windowHeight), display: true)
+        let newFrame = NSRect(x: xPos, y: yPos, width: windowWidth, height: windowHeight)
+        
+        // Window remains correctly placed and sized for the maximum expanded layout.
+        // SwiftUI handles all internal visual spring animations smoothly inside this bounding box!
+        window.setFrame(newFrame, display: true)
     }
 }

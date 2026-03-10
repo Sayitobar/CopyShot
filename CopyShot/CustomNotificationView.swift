@@ -29,8 +29,61 @@ struct CustomNotificationView: View {
     
     @State private var isHovering = false
     @State private var isExpanded = false
+    @State private var collapsedHeight: CGFloat = 0
+    @State private var expandedHeight: CGFloat = 0
     
     var body: some View {
+        VStack(spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                // Sizing Double: ALWAYS EXPANDED to completely bypass SwiftUI layout deferral
+                notificationBox(expanded: true)
+                    .opacity(0)
+                    .allowsHitTesting(false)
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: ExpandedHeightKey.self, value: geometry.size.height)
+                        }
+                    )
+                
+                // The Real View
+                notificationBox(expanded: isExpanded)
+                    .background(
+                        GeometryReader { geometry in
+                            Color.clear.preference(key: CollapsedHeightKey.self, value: geometry.size.height)
+                        }
+                    )
+            }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 28)
+        .padding(.top, 14)
+        .offset(y: isVisible ? 0 : -100)
+        .opacity(isVisible ? 1 : 0)
+        .animation(.spring(response: 0.5, dampingFraction: 0.7, blendDuration: 0), value: isVisible)
+        .onAppear {
+            isVisible = true
+        }
+        // Push content to the top
+        Spacer(minLength: 0)
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .onPreferenceChange(CollapsedHeightKey.self) { newHeight in
+            guard newHeight > 0 else { return }
+            if !isExpanded && collapsedHeight == 0 {
+                collapsedHeight = newHeight
+                onHeightChange?(newHeight) // Initial snap
+            }
+        }
+        .onPreferenceChange(ExpandedHeightKey.self) { newHeight in
+            guard newHeight > 0 else { return }
+            if expandedHeight == 0 {
+                debugPrint("[PrefKey] Sizing Double precalculated expandedHeight: \(newHeight)")
+                expandedHeight = newHeight
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func notificationBox(expanded: Bool) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: iconName)
                 .font(.system(size: 24, weight: .medium))
@@ -54,11 +107,11 @@ struct CustomNotificationView: View {
                 }
                 
                 if !bodyText.isEmpty {
-                    Text(isExpanded ? (fullBodyText ?? bodyText) : bodyText)
+                    Text(expanded ? (fullBodyText ?? bodyText) : bodyText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(isExpanded ? nil : 4)
+                        .lineLimit(expanded ? nil : 4)
                 }
             }
             Spacer(minLength: 0)
@@ -101,7 +154,7 @@ struct CustomNotificationView: View {
                         isExpanded.toggle()
                     }
                 } label: {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.primary)
                         .frame(width: 22, height: 22)
@@ -116,12 +169,6 @@ struct CustomNotificationView: View {
             }
         }
         .shadow(color: Color.black.opacity(0.12), radius: 15, x: 0, y: 8)
-        .padding(.horizontal, 20)
-        .padding(.bottom, 28)
-        .padding(.top, 14)
-        .offset(y: isVisible ? 0 : -100)
-        .opacity(isVisible ? 1 : 0)
-        .animation(.spring(response: 0.5, dampingFraction: 0.7, blendDuration: 0), value: isVisible)
         .onHover { isHoveringStatus in
             isHovering = isHoveringStatus
             if isHoveringStatus {
@@ -130,22 +177,19 @@ struct CustomNotificationView: View {
                 onHoverExit?()
             }
         }
-        .onAppear {
-            isVisible = true
-        }
-        .background(GeometryReader { geometry in
-            Color.clear.preference(key: ViewHeightKey.self, value: geometry.size.height)
-        })
-        .onPreferenceChange(ViewHeightKey.self) { newHeight in
-            // When height expands or collapses, notify presenter to fix window size
-            onHeightChange?(newHeight)
-        }
     }
 }
 
-struct ViewHeightKey: PreferenceKey {
+struct CollapsedHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+        value = max(value, nextValue())
+    }
+}
+
+struct ExpandedHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }

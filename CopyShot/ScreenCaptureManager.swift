@@ -25,11 +25,13 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private var selectedRegion: CaptureSelection?
     private var streamContent: SCShareableContent?
-    var onCaptureComplete: ((CGImage?) -> Void)?
+    private var previousApp: NSRunningApplication?
+    var onCaptureComplete: ((CGImage?, NSScreen?) -> Void)?
 
     // MARK: - UI Flow
     func startCapture() {
         isCaptureActive = true
+        previousApp = NSWorkspace.shared.frontmostApplication
         Task { await showOverlay() }
     }
     
@@ -80,6 +82,12 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         overlayWindows.forEach { $0.orderOut(nil) }
         overlayWindows.removeAll()
         NSCursor.unhide()
+        
+        // Restore the previously active application to prevent greyed-out windows
+        if let app = previousApp {
+            app.activate(options: [])
+        }
+        previousApp = nil
     }
     
     private func cancelCapture() {
@@ -154,8 +162,16 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         Task { @MainActor in
             guard self.isCaptureActive else { return }
             self.isCaptureActive = false
+            
+            // Explicitly destroy the SCStream and content references. 
+            // This is strictly required in macOS 15+ to remove the purple "Screen Sharing" menu bar icon!
+            self.stream = nil
+            self.streamContent = nil
+            let activeScreen = self.selectedRegion?.screen
+            self.selectedRegion = nil
+            
             self.log("Capture sequence completed. Success: \(image != nil)")
-            self.onCaptureComplete?(image)
+            self.onCaptureComplete?(image, activeScreen)
         }
     }
 

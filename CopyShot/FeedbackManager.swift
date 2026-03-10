@@ -18,14 +18,15 @@ class FeedbackManager {
     private init() {}
     
     // A simple, static function to show the "Text Copied" notification.
-    static func showNotification(title: String, subtitle: String? = nil, body: String, fullBody: String? = nil, iconName: String, accentColor: Color, soundName: String? = nil) {
+    static func showNotification(title: String, subtitle: String? = nil, body: String, fullBody: String? = nil, iconName: String, accentColor: Color, soundName: String? = nil, targetScreen: NSScreen? = nil) {
         shared.presenter.showNotification(
             title: title,
             subtitle: subtitle,
             body: body,
             fullBody: fullBody,
             iconName: iconName,
-            accentColor: accentColor
+            accentColor: accentColor,
+            targetScreen: targetScreen
         )
         
         // Play sound directly
