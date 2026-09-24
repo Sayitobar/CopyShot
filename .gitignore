@@ -22,3 +22,8 @@ DerivedData/
 
 # Swift Package Manager
 .build/
+
+# Private developer release scratchpad
+RELEASE_NOTES.md
+benchmark_results.txt
+copyshot_benchmark.txt

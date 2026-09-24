@@ -154,7 +154,22 @@ struct SettingsView: View {
         .id(settings.appearance)
         .onAppear {
             if let window = NSApp.windows.first(where: { $0.delegate is AppDelegate == false }) {
-                window.center()
+                // Determine which screen the user is currently working on based on mouse cursor
+                let mouseLocation = NSEvent.mouseLocation
+                let activeScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main
+                
+                if let screen = activeScreen {
+                    let screenRect = screen.visibleFrame
+                    let windowRect = window.frame
+                    
+                    // Calculate exact center of the targeted active monitor
+                    let x = screenRect.origin.x + (screenRect.width - windowRect.width) / 2
+                    let y = screenRect.origin.y + (screenRect.height - windowRect.height) / 2
+                    
+                    window.setFrameOrigin(NSPoint(x: x, y: y))
+                } else {
+                    window.center() // Fallback
+                }
             }
             applyWindowConfiguration()
         }

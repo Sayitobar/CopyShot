@@ -1,0 +1,40 @@
+name: CI Test Suite
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run Unit & Benchmark Tests
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode Version
+        run: xcodebuild -version
+
+      - name: Run Test Suite
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -scheme CopyShot \
+            -destination "platform=macOS" \
+            -only-testing:CopyShotTests \
+            -resultBundlePath TestResults.xcresult
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+          if-no-files-found: ignore

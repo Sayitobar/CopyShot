@@ -44,6 +44,36 @@
 
 ---
 
+## Architecture & How It Works
+
+CopyShot runs as an ultra-lightweight menu bar utility (`LSUIElement`) with a direct, local pipeline:
+
+```
+[Global Hotkey (⌘⇧C)] 
+         │
+         ▼
+[ScreenCaptureKit Overlay] ──▶ Single-frame selection capture (Retina-scaled)
+         │
+         ▼
+[CoreImage Preprocessor]   ──▶ Grayscale (CIPhotoEffectMono) + 50% contrast boost
+         │
+         ▼
+[Apple Vision OCR Engine]  ──▶ VNRecognizeTextRequest + smart reading order assembly
+         │
+         ├───────────────────────────────┐
+         ▼                               ▼
+[NSPasteboard (Clipboard)]      [Floating Frosted-Glass HUD]
+(Text instantly available)       (Expandable preview + audio feedback)
+```
+
+1. **Hotkey Listening**: Carbon event registration intercepts `⌘⇧C` globally without requiring intrusive Accessibility permissions.
+2. **Multi-Monitor Capture**: An `OverlayWindow` is created over every attached screen with an interactive crosshair and bounding box selector.
+3. **Single-Frame Capture**: ScreenCaptureKit streams a single frame for the selected rectangle and immediately tears down the stream to release resources and remove the macOS recording indicator.
+4. **Local Neural OCR**: Preprocessed with CoreImage, Apple's Vision framework identifies character candidates, lines, and bounding boxes. CopyShot groups lines logically from top-to-bottom and left-to-right.
+5. **Immediate Feedback**: The recognized text is copied to `NSPasteboard.general` while an interactive frosted-glass notification HUD appears on the captured monitor.
+
+---
+
 ## Privacy
 CopyShot respects your privacy. All OCR processing happens locally on your device using Apple's Vision framework. The app **does not access any of your personal files**. Your captured images and extracted text remain entirely on your Mac.
 
@@ -73,16 +103,15 @@ CopyShot respects your privacy. All OCR processing happens locally on your devic
 <details>
   <summary>Click to expand</summary>
 
-If you'd like to edit, build and run CopyShot yourself on macOS, here's how to get started.
+If you'd like to edit, build, test, and run CopyShot yourself on macOS, here's how to get started. See [CONTRIBUTING.md](CONTRIBUTING.md) for full development guidelines.
 
 ### Prerequisites
 - macOS 14+
-- Xcode (free from the App Store)
+- Xcode 16+ (free from the App Store)
 
 ### Steps
 1. **Clone the Repo:**
-   Open Terminal and run:
-   ```
+   ```bash
    git clone https://github.com/Sayitobar/CopyShot.git
    cd CopyShot
    ```
@@ -95,13 +124,19 @@ If you'd like to edit, build and run CopyShot yourself on macOS, here's how to g
    Hit the **Run** button (play icon) or go to `Product > Run`.
    It should build and launch the app.
 
-4. **Grant Permissions:**
+4. **Run Unit & Benchmark Tests:**
+   Press `⌘U` in Xcode or run via terminal:
+   ```bash
+   xcodebuild test -scheme CopyShot -destination 'platform=macOS' -only-testing:CopyShotTests
+   ```
+
+5. **Grant Permissions:**
    The first time you run CopyShot, macOS security features will prevent it from capturing your screen. You will need to manually grant permission. Here is how to locate `Screen Recording Permissions` manually:
    - Go to `System Settings > Privacy & Security > Screen Recording`.
    - Find **CopyShot** in the list of applications and **enable the toggle** next to it.
    - Quit and reopen CopyShot for the changes to take effect.
 
-5. **Making Code Changes:**
+6. **Making Code Changes:**
    If you'd like to make any change to the code:
    - Save your changes.
    - Quit any running CopyShot instances.
