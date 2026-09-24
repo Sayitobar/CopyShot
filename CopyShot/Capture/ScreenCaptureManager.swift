@@ -8,27 +8,33 @@
 import SwiftUI
 import ScreenCaptureKit
 
-// Shared CIContext to avoid expensive reallocation per frame.
-// Placed outside the class to avoid @MainActor isolation errors in Swift 6.
-private let sharedCIContext = CIContext()
-
 @MainActor
-class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
+class ScreenCaptureManager: NSObject {
     
     private var overlayWindows: [OverlayWindow] = []
-    private var stream: SCStream?
     private var isCaptureActive = false
+    
     struct CaptureSelection {
-    let rect: CGRect
-    let screen: NSScreen
-}
+        let rect: CGRect
+        let screen: NSScreen
+    }
 
     private var selectedRegion: CaptureSelection?
     private var streamContent: SCShareableContent?
     private var previousApp: NSRunningApplication?
     var onCaptureComplete: ((CGImage?, NSScreen?) -> Void)?
 
+    // MARK: - Lifecycle & Pre-warming
+    
+    /// Pre-warms ScreenCaptureKit and system privacy permissions in the background during app startup.
+    func prewarm() {
+        Task(priority: .background) {
+            _ = try? await SCShareableContent.current
+        }
+    }
+
     // MARK: - UI Flow
+    
     func startCapture() {
         isCaptureActive = true
         previousApp = NSWorkspace.shared.frontmostApplication
@@ -46,14 +52,20 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         
         let onCaptureAction: (CGRect, NSScreen) -> Void = { [weak self] localRect, screen in
+            #if DEBUG
+            CaptureBenchmarkTracker.shared.recordMouseRelease()
+            #endif
             Task { @MainActor in
                 guard let self = self else { return }
                 // The first gesture to end wins.
                 if !self.overlayWindows.isEmpty {
                     self.selectedRegion = CaptureSelection(rect: localRect, screen: screen)
                     self.closeOverlay()
-                    if localRect != .zero { self.startStream() }
-                    else { self.complete(with: nil) }
+                    if localRect != .zero {
+                        await self.captureSelection()
+                    } else {
+                        self.complete(with: nil)
+                    }
                 }
             }
         }
@@ -66,6 +78,7 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
             window.isOpaque = false
             window.backgroundColor = .clear
             window.level = .screenSaver
+            window.sharingType = .none // Excludes overlay from ScreenCaptureKit recordings
             window.contentView = ActionHostingView(rootView: captureView)
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             window.onEscape = { [weak self] in Task { @MainActor in self?.cancelCapture() } }
@@ -97,129 +110,76 @@ class ScreenCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
     
     // MARK: - Capture Flow
     
-    /// Starts the ScreenCaptureKit stream for the selected region.
-    private func startStream() {
+    /// Captures the selected screen region instantly using macOS 14+ SCScreenshotManager.
+    private func captureSelection() async {
         guard let content = streamContent, let selection = selectedRegion else {
-            log("Error: Missing stream content or selection data.", type: .error)
+            log("Error: Missing shareable content or selection data.", type: .error)
             complete(with: nil)
             return
         }
         
-        log("Identifying target display for capture...")
-        
-        guard let screenNumber = selection.screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-            log("Error: Could not get screen number from NSScreen.", type: .error)
+        guard let targetDisplay = findMatchingDisplay(for: selection.screen, in: content) else {
+            log("Error: Could not find matching SCDisplay for screen.", type: .error)
             complete(with: nil)
             return
         }
         
-        // Match the selection screen to a SCDisplay based on the hardware display ID.
-        guard let targetDisplay = content.displays.first(where: { $0.displayID == screenNumber }) else {
-            log("Error: Could not find a matching SCDisplay for the selected screen.", type: .error)
-            complete(with: nil)
-            return
-        }
-        
-        // Configure the stream
-        let filter = SCContentFilter(display: targetDisplay, excludingApplications: [], exceptingWindows: [])
-        let config = SCStreamConfiguration()
-        
-        let scaleFactor = selection.screen.backingScaleFactor
-        
-        // Map the point-based selection rect to the display's coordinate space.
-        let sourceRect = CGRect(
-            x: selection.rect.origin.x,
-            y: selection.rect.origin.y,
-            width: selection.rect.width,
-            height: selection.rect.height
-        )
-        
-        config.sourceRect = sourceRect
-        
-        // Set the output alignment to pixel dimensions for Retina quality.
-        config.width = Int(selection.rect.width * scaleFactor)
-        config.height = Int(selection.rect.height * scaleFactor)
-        config.scalesToFit = true
-        config.queueDepth = 1
-        
-        log("Stream Configuration: SourceRect=\(sourceRect) OutputSize=\(config.width)x\(config.height) Scale=\(scaleFactor)")
+        let (filter, config) = makeCaptureConfiguration(display: targetDisplay, selection: selection)
         
         do {
-            stream = SCStream(filter: filter, configuration: config, delegate: self)
-            try stream?.addStreamOutput(self, type: .screen, sampleHandlerQueue: .global(qos: .userInitiated))
-            
-            Task {
-                log("Starting SCStream...")
-                try await stream?.startCapture()
-            }
-        } catch {
-            log("Failed to start stream: \(error.localizedDescription)", type: .error)
-            complete(with: nil)
-        }
-    }
-    
-    nonisolated private func complete(with image: CGImage?) {
-        Task { @MainActor in
-            guard self.isCaptureActive else { return }
-            self.isCaptureActive = false
-            
-            // Explicitly destroy the SCStream and content references. 
-            // This is strictly required in macOS 15+ to remove the purple "Screen Sharing" menu bar icon!
-            self.stream = nil
-            self.streamContent = nil
-            let activeScreen = self.selectedRegion?.screen
-            self.selectedRegion = nil
-            
-            self.log("Capture sequence completed. Success: \(image != nil)")
-            self.onCaptureComplete?(image, activeScreen)
-        }
-    }
-
-    // MARK: - SCStream Delegate
-    
-    nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        // Immediately stop the stream as we only need one frame.
-        Task {
-            do { try await stream.stopCapture() } catch {
-                // Ignore stop errors, as we are done anyway.
-            }
-        }
-        
-        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            log("Stream output failed: Could not get image buffer.", type: .error)
-            complete(with: nil)
-            return
-        }
-        
-        let ciImage = CIImage(cvPixelBuffer: imageBuffer)
-        let context = sharedCIContext
-        
-        // Convert to CGImage
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
-            log("Stream output failed: Could not create CGImage.", type: .error)
-            complete(with: nil)
-            return
-        }
-        
-        Task { @MainActor in
-            // Guard against edge cases where selection was cleared
-            guard self.selectedRegion != nil else {
-                complete(with: nil)
-                return
-            }
-            log("Frame captured successfully.")
+            log("Capturing frame via SCScreenshotManager...")
+            let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            #if DEBUG
+            CaptureBenchmarkTracker.shared.recordCaptureAcquired()
+            #endif
+            log("Frame captured successfully (\(cgImage.width)x\(cgImage.height) px).")
             complete(with: cgImage)
+        } catch {
+            log("SCScreenshotManager capture failed: \(error.localizedDescription)", type: .error)
+            complete(with: nil)
         }
     }
-
-    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
-        log("Stream stopped with error: \(error.localizedDescription)", type: .error)
-        complete(with: nil)
+    
+    // MARK: - Helpers
+    
+    private func findMatchingDisplay(for screen: NSScreen, in content: SCShareableContent) -> SCDisplay? {
+        guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+            return nil
+        }
+        return content.displays.first(where: { $0.displayID == screenNumber })
     }
+    
+    private func makeCaptureConfiguration(display: SCDisplay, selection: CaptureSelection) -> (SCContentFilter, SCStreamConfiguration) {
+        let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+        let config = SCStreamConfiguration()
+        let scaleFactor = selection.screen.backingScaleFactor
+        
+        config.sourceRect = selection.rect
+        config.width = max(1, Int(selection.rect.width * scaleFactor))
+        config.height = max(1, Int(selection.rect.height * scaleFactor))
+        config.scalesToFit = true
+        config.showsCursor = false
+        
+        return (filter, config)
+    }
+    
+    private func complete(with image: CGImage?) {
+        guard isCaptureActive else { return }
+        isCaptureActive = false
+        
+        streamContent = nil
+        let activeScreen = selectedRegion?.screen
+        selectedRegion = nil
+        
+        log("Capture sequence completed. Success: \(image != nil)")
+        onCaptureComplete?(image, activeScreen)
+    }
+
     // MARK: - Logging helper
+    
     private enum LogType { case info, error }
     
-    nonisolated private func log(_ message: String, type: LogType = .info) {
+    private func log(_ message: String, type: LogType = .info) {
         let prefix = type == .error ? "[ScreenCaptureManager] ❌" : "[ScreenCaptureManager] ℹ️"
         debugPrint("\(prefix) \(message)")
     }

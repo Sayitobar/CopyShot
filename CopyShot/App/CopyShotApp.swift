@@ -47,6 +47,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // The OCR service runs on a background thread internally,
             // so this call does not block the main thread.
             OCRService.performOCR(on: capturedImage) { result in
+                #if DEBUG
+                CaptureBenchmarkTracker.shared.recordOCRCompleted()
+                #endif
                 switch result {
                 case .success(let recognizedText):
                     if recognizedText.isEmpty {
@@ -108,6 +111,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             name: .captureHotkeyPressed,
             object: nil
         )
+        
+        // 3. Pre-warm ScreenCaptureKit in background to eliminate cold-start daemon delay
+        captureManager.prewarm()
         
         debugPrint("--- Setup complete. Waiting for hotkeys. ---")
     }

@@ -86,7 +86,9 @@ class NotificationPresenter: ObservableObject {
             },
             onHeightChange: { [weak self] newHeight in
                 guard let self = self, let _ = self.hostingView else { return }
-                self.updateWindowFrame(with: NSSize(width: 384, height: newHeight))
+                DispatchQueue.main.async {
+                    self.updateWindowFrame(with: NSSize(width: 384, height: newHeight))
+                }
             }
         ).preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
 
@@ -100,6 +102,10 @@ class NotificationPresenter: ObservableObject {
         
         notificationWindow?.alphaValue = 1.0 // Reset alpha before showing
         notificationWindow?.orderFrontRegardless()
+        
+        #if DEBUG
+        CaptureBenchmarkTracker.shared.recordHUDDisplayed()
+        #endif
         
         startDismissTimer()
     }
