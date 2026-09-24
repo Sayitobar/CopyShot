@@ -51,11 +51,164 @@ extension AnyTransition {
     }
 }
 
+// MARK: - Native Window Dragging Area
+struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragNSView {
+        DragNSView()
+    }
+    func updateNSView(_ nsView: DragNSView, context: Context) {}
+
+    class DragNSView: NSView {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+            return true
+        }
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
+        }
+    }
+}
+
+struct SettingsViewHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
+    }
+}
+
+// MARK: - Settings Window Manager
+@MainActor
+final class SettingsWindowManager: NSObject, NSWindowDelegate {
+    static let shared = SettingsWindowManager()
+    
+    private var window: NSWindow?
+    private var updaterViewModel: UpdaterViewModel?
+    
+    func showSettings(updaterViewModel: UpdaterViewModel? = nil) {
+        if let updater = updaterViewModel {
+            self.updaterViewModel = updater
+        }
+        
+        let mouseLocation = NSEvent.mouseLocation
+        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first
+        
+        if let existingWindow = self.window {
+            if let screen = targetScreen {
+                let currentScreen = existingWindow.screen
+                if currentScreen != screen || !existingWindow.isVisible {
+                    let screenRect = screen.visibleFrame
+                    let windowRect = existingWindow.frame
+                    let x = screenRect.origin.x + (screenRect.width - windowRect.width) / 2
+                    let y = screenRect.origin.y + (screenRect.height - windowRect.height) / 2
+                    existingWindow.setFrameOrigin(NSPoint(x: x, y: y))
+                }
+            }
+            updateAppearance()
+            NSApp.activate(ignoringOtherApps: true)
+            existingWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+        
+        createAndShowWindow(on: targetScreen)
+    }
+    
+    private func createAndShowWindow(on targetScreen: NSScreen?) {
+        let settingsView = SettingsView()
+            .environmentObject(SettingsManager.shared)
+            .environmentObject(updaterViewModel ?? UpdaterViewModel())
+        
+        let hostingController = NSHostingController(rootView: settingsView)
+        
+        let newWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 260),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        newWindow.title = "Settings"
+        newWindow.titleVisibility = .hidden
+        newWindow.titlebarAppearsTransparent = true
+        newWindow.isMovableByWindowBackground = false
+        newWindow.toolbar = nil
+        newWindow.isOpaque = false
+        newWindow.backgroundColor = .clear
+        newWindow.standardWindowButton(.closeButton)?.isHidden = true
+        newWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        newWindow.standardWindowButton(.zoomButton)?.isHidden = true
+        newWindow.isReleasedWhenClosed = false
+        if #available(macOS 11.0, *) {
+            newWindow.titlebarSeparatorStyle = .none
+        }
+        
+        newWindow.contentViewController = hostingController
+        newWindow.delegate = self
+        self.window = newWindow
+        
+        updateAppearance()
+        
+        if let screen = targetScreen {
+            let screenRect = screen.visibleFrame
+            let windowRect = newWindow.frame
+            let x = screenRect.origin.x + (screenRect.width - windowRect.width) / 2
+            let y = screenRect.origin.y + (screenRect.height - windowRect.height) / 2
+            newWindow.setFrameOrigin(NSPoint(x: x, y: y))
+        } else {
+            newWindow.center()
+        }
+        
+        NSApp.activate(ignoringOtherApps: true)
+        newWindow.makeKeyAndOrderFront(nil)
+    }
+    
+    func closeSettings() {
+        window?.close()
+    }
+    
+    func updateAppearance() {
+        guard let window = self.window else { return }
+        switch SettingsManager.shared.appearance {
+        case .light: window.appearance = NSAppearance(named: .aqua)
+        case .dark: window.appearance = NSAppearance(named: .darkAqua)
+        case .system: window.appearance = nil
+        }
+    }
+    
+    func updateWindowHeight(_ newHeight: CGFloat) {
+        guard let window = self.window else { return }
+        let currentFrame = window.frame
+        if abs(currentFrame.height - newHeight) < 1 { return }
+        
+        let topY = currentFrame.origin.y + currentFrame.size.height
+        let newOriginY = topY - newHeight
+        let newFrame = NSRect(x: currentFrame.origin.x, y: newOriginY, width: currentFrame.width, height: newHeight)
+        
+        if !window.isVisible {
+            window.setFrame(newFrame, display: true)
+            return
+        }
+        
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(newFrame, display: true)
+        }
+    }
+    
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        let currentFrame = sender.frame
+        let topY = currentFrame.origin.y + currentFrame.size.height
+        let newOriginY = topY - frameSize.height
+        sender.setFrameOrigin(NSPoint(x: currentFrame.origin.x, y: newOriginY))
+        return frameSize
+    }
+}
+
 struct SettingsView: View {
     @EnvironmentObject var settings: SettingsManager
     @EnvironmentObject var updaterViewModel: UpdaterViewModel
     @State private var layoutTab: SettingsTab = .general
     @State private var visibleTab: SettingsTab = .general
+    @State private var isTransitioning = false
     @Environment(\.colorScheme) var colorScheme
     
     // Toggle content transitions ON/OFF (Slide under tab bar)
@@ -64,48 +217,50 @@ struct SettingsView: View {
     
     var body: some View {
         ZStack(alignment: .top) {
-            // Dummy container to snap the layout dimensions instantly WITHOUT animation
-            // This forces the NSWindow to resize abruptly without intermediate bouncy frames
             // 1. CONTENT LAYER
             ZStack(alignment: .top) {
-                switch layoutTab {
-                case .general: GeneralSettingsView().hidden()
-                case .capture: CaptureSettingsView().hidden()
-                case .notifications: NotificationsSettingsView().hidden()
-                case .about: AboutSettingsView(updaterViewModel: updaterViewModel).hidden()
-                }
-            }
-            .padding(.vertical, 32)
-            .padding(.horizontal, 24)
-            .animation(nil, value: layoutTab) // Layout dimensions snap immediately
-            .frame(maxWidth: .infinity, alignment: .top)
-            .padding(.top, 68) // Exact height of the Tab Bar wrapper
-            .overlay(alignment: .top) {
+                // Dummy container to snap the layout dimensions instantly WITHOUT animation
+                // This forces the container height to adjust immediately to the active tab
                 ZStack(alignment: .top) {
-                    // Linear Gradient Shadow that behaves exclusively as an internal under-lay, drawing BEFORE the content!
-                    LinearGradient(
-                        colors: [Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), .clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 6)
-                    .allowsHitTesting(false)
-                    
-                    // The actual visual content gracefully fades and slides entirely inside the precisely-snapped bounds
-                    ZStack(alignment: .top) {
-                        let activeTransition = enableContentAnimations ? AnyTransition.slideFade : .identity
-                        switch visibleTab {
-                        case .general: GeneralSettingsView().transition(activeTransition)
-                        case .capture: CaptureSettingsView().transition(activeTransition)
-                        case .notifications: NotificationsSettingsView().transition(activeTransition)
-                        case .about: AboutSettingsView(updaterViewModel: updaterViewModel).transition(activeTransition)
-                        }
+                    switch layoutTab {
+                    case .general: GeneralSettingsView().hidden()
+                    case .capture: CaptureSettingsView().hidden()
+                    case .notifications: NotificationsSettingsView().hidden()
+                    case .about: AboutSettingsView(updaterViewModel: updaterViewModel).hidden()
                     }
-                    .padding(.vertical, 32)
-                    .padding(.horizontal, 24)
-                    .frame(maxWidth: .infinity, alignment: .top)
                 }
-                .padding(.top, 68) // Match the boundary offset exactly
+                .padding(.vertical, 32)
+                .padding(.horizontal, 24)
+                .animation(nil, value: layoutTab) // Layout dimensions snap immediately
+                .frame(maxWidth: .infinity, alignment: .top)
+                .padding(.top, 68) // Exact height of the Tab Bar wrapper
+                .overlay(alignment: .top) {
+                    ZStack(alignment: .top) {
+                        // Linear Gradient Shadow that behaves exclusively as an internal under-lay, drawing BEFORE the content!
+                        LinearGradient(
+                            colors: [Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 6)
+                        .allowsHitTesting(false)
+                        
+                        // The actual visual content gracefully fades and slides entirely inside the precisely-snapped bounds
+                        ZStack(alignment: .top) {
+                            let activeTransition = enableContentAnimations ? AnyTransition.slideFade : .identity
+                            switch visibleTab {
+                            case .general: GeneralSettingsView().transition(activeTransition)
+                            case .capture: CaptureSettingsView().transition(activeTransition)
+                            case .notifications: NotificationsSettingsView().transition(activeTransition)
+                            case .about: AboutSettingsView(updaterViewModel: updaterViewModel).transition(activeTransition)
+                            }
+                        }
+                        .padding(.vertical, 32)
+                        .padding(.horizontal, 24)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                    }
+                    .padding(.top, 68) // Match the boundary offset exactly
+                }
             }
             .zIndex(1)
             
@@ -113,11 +268,15 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     ForEach(SettingsTab.allCases, id: \.self) { tab in
-                        TabButton(tab: tab, isSelected: visibleTab == tab) {
+                        TabButton(tab: tab, isSelected: visibleTab == tab, isTransitioning: isTransitioning) {
                             if visibleTab == tab { return }
+                            isTransitioning = true
                             layoutTab = tab
                             withAnimation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.35)) {
                                 visibleTab = tab
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                isTransitioning = false
                             }
                         }
                     }
@@ -137,6 +296,7 @@ struct SettingsView: View {
                 Divider() // Separates our Tab Bar from our Content
                     .opacity(0.5)
             }
+            .background(WindowDragArea())
             .zIndex(2)
             
             // 3. NATIVE CUSTOM CLOSE BUTTON
@@ -152,64 +312,17 @@ struct SettingsView: View {
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .preferredColorScheme(settings.appearance.colorScheme)
         .id(settings.appearance)
-        .onAppear {
-            if let window = NSApp.windows.first(where: { $0.delegate is AppDelegate == false }) {
-                // Determine which screen the user is currently working on based on mouse cursor
-                let mouseLocation = NSEvent.mouseLocation
-                let activeScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main
-                
-                if let screen = activeScreen {
-                    let screenRect = screen.visibleFrame
-                    let windowRect = window.frame
-                    
-                    // Calculate exact center of the targeted active monitor
-                    let x = screenRect.origin.x + (screenRect.width - windowRect.width) / 2
-                    let y = screenRect.origin.y + (screenRect.height - windowRect.height) / 2
-                    
-                    window.setFrameOrigin(NSPoint(x: x, y: y))
-                } else {
-                    window.center() // Fallback
-                }
+        .onChange(of: settings.appearance) { _ in
+            SettingsWindowManager.shared.updateAppearance()
+        }
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: SettingsViewHeightKey.self, value: geo.size.height)
             }
-            applyWindowConfiguration()
-        }
-        .onChange(of: colorScheme) {
-            applyWindowConfiguration()
-        }
-    }
-    
-    private func applyWindowConfiguration() {
-        DispatchQueue.main.async {
-            for window in NSApp.windows {
-                guard window.styleMask.contains(.titled), window.styleMask.contains(.closable) else { continue }
-                
-                window.title = "" 
-                window.titleVisibility = .hidden
-                window.titlebarAppearsTransparent = true
-                window.styleMask.insert(.fullSizeContentView)
-                window.isMovableByWindowBackground = true
-                
-                // Nuke the NSToolbar that `Settings` implicitly creates which forcefully draws a background!
-                window.toolbar = nil
-                
-                // Completely hide Apple's native macOS Traffic Lights!
-                window.standardWindowButton(.closeButton)?.isHidden = true
-                window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-                window.standardWindowButton(.zoomButton)?.isHidden = true
-                
-                // Erase native OS background completely to prevent color mismatch gaps!
-                window.isOpaque = false
-                window.backgroundColor = .clear
-                
-                if #available(macOS 11.0, *) {
-                    window.titlebarSeparatorStyle = .none // Seamlessly unifies the background!
-                }
-                
-                switch settings.appearance {
-                case .light: window.appearance = NSAppearance(named: .aqua)
-                case .dark: window.appearance = NSAppearance(named: .darkAqua)
-                case .system: window.appearance = nil
-                }
+        )
+        .onPreferenceChange(SettingsViewHeightKey.self) { newHeight in
+            if newHeight > 50 {
+                SettingsWindowManager.shared.updateWindowHeight(newHeight)
             }
         }
     }
@@ -219,23 +332,27 @@ struct SettingsView: View {
 struct TabButton: View {
     let tab: SettingsTab
     let isSelected: Bool
+    let isTransitioning: Bool
     let action: () -> Void
     
     @State private var isHovered = false
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            isHovered = false
+            action()
+        }) {
             VStack(spacing: 4) {
                 Image(systemName: tab.iconName)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isSelected ? .blue : (isHovered ? .primary : .secondary))
+                    .foregroundStyle(isSelected ? .blue : (isHovered && !isTransitioning ? .primary : .secondary))
                     .animation(nil, value: isSelected) // Instant color swap, no interpolation during slide
                     .frame(height: 18)
                 
                 Text(tab.rawValue)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSelected ? .primary : (isHovered ? .primary : .secondary))
+                    .foregroundStyle(isSelected ? .primary : (isHovered && !isTransitioning ? .primary : .secondary))
                     .animation(nil, value: isSelected) // Instant color swap, no interpolation during slide
                     .frame(height: 14)
             }
@@ -243,17 +360,23 @@ struct TabButton: View {
             .contentShape(Rectangle()) // Ensures dead-space is clickable
             .background(
                 Group {
-                    if isHovered && !isSelected {
+                    if isHovered && !isSelected && !isTransitioning {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(Color.secondary.opacity(0.05))
                     }
                 }
             )
+            .animation(nil, value: isSelected)
+            .animation(nil, value: isTransitioning)
         }
         .buttonStyle(.plain)
         .onHover { hovered in
-            withAnimation(.easeInOut(duration: 0.1)) {
-                isHovered = hovered
+            if isTransitioning || isSelected {
+                isHovered = false
+            } else {
+                withAnimation(.easeInOut(duration: 0.1)) {
+                    isHovered = hovered
+                }
             }
         }
     }
@@ -270,9 +393,7 @@ struct CustomCloseButton: View {
         let activeColor = isHovered ? Color(red: 255/255, green: 80/255, blue: 75/255) : Color(red: 255/255, green: 95/255, blue: 86/255)
         
         Button(action: {
-            if let window = NSApp.windows.first(where: { $0.styleMask.contains(.titled) && $0.delegate is AppDelegate == false }) {
-                window.close()
-            }
+            SettingsWindowManager.shared.closeSettings()
         }) {
             Circle()
                 .fill(isActive ? activeColor : Color(white: colorScheme == .dark ? 0.3 : 0.8))
@@ -442,18 +563,21 @@ struct CaptureSettingsView: View {
                     
                     if !settings.recognitionLanguages.isEmpty {
                         // Collective Box for added languages
-                        VStack(spacing: 0) {
-                            ForEach(Array(settings.recognitionLanguages.enumerated()), id: \.element) { index, language in
-                                LanguageRow(
-                                    language: language,
-                                    canRemove: settings.recognitionLanguages.count > 1,
-                                    isLast: index == settings.recognitionLanguages.count - 1
-                                ) {
-                                    removeLanguage(language)
+                        ScrollView(.vertical, showsIndicators: settings.recognitionLanguages.count > 3) {
+                            VStack(spacing: 0) {
+                                ForEach(Array(settings.recognitionLanguages.enumerated()), id: \.element) { index, language in
+                                    LanguageRow(
+                                        language: language,
+                                        canRemove: settings.recognitionLanguages.count > 1,
+                                        isLast: index == settings.recognitionLanguages.count - 1
+                                    ) {
+                                        removeLanguage(language)
+                                    }
                                 }
                             }
                         }
                         .frame(width: 200) // Match width of container
+                        .frame(maxHeight: 110)
                         .background(Color(.controlBackgroundColor).opacity(0.5))
                         .clipShape(.rect(cornerRadius: 6))
                         .overlay(

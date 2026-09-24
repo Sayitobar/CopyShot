@@ -19,7 +19,7 @@ struct CaptureView: View {
             ZStack(alignment: .topLeading) {
                 Color.black.opacity(0.3)
                 if let selectionRect = selectionRectangle() {
-                    Rectangle().fill(Color.clear)
+                    Rectangle().fill(Color.white)
                         .frame(width: selectionRect.width, height: selectionRect.height)
                         .position(x: selectionRect.midX, y: selectionRect.midY)
                         .blendMode(.destinationOut)

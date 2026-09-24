@@ -206,23 +206,12 @@ struct CopyShotApp: App {
                  Image(systemName: state.rawValue) // SF Symbol
             }
         })
-        
-        // This defines the window that opens when the user clicks the SettingsLink.
-        // It's a separate, secondary scene.
-        Window("Settings", id: "settings") {
-            SettingsView()
-                .environmentObject(settings) // Pass the settings manager to the view
-                .environmentObject(updaterViewModel) // Pass Sparkle to bindings
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
     }
 }
 
 struct CopyShotMenu: View {
     var appDelegate: AppDelegate
     @ObservedObject var updaterViewModel: UpdaterViewModel
-    @Environment(\.openWindow) private var openWindow
     
     var body: some View {
         Button("Capture Text") {
@@ -233,8 +222,7 @@ struct CopyShotMenu: View {
         Divider()
         
         Button("Settings...") {
-            NSApp.activate(ignoringOtherApps: true)
-            openWindow(id: "settings")
+            SettingsWindowManager.shared.showSettings(updaterViewModel: updaterViewModel)
         }
         .keyboardShortcut(",", modifiers: .command)
         
