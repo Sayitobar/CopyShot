@@ -52,7 +52,7 @@ CopyShot runs as an ultra-lightweight menu bar utility (`LSUIElement`) with a di
 [Global Hotkey (⌘⇧C)] 
          │
          ▼
-[ScreenCaptureKit Overlay] ──▶ Single-frame selection capture (Retina-scaled)
+[SCScreenshotManager]      ──▶ Retina-scaled single-frame capture (~35ms)
          │
          ▼
 [CoreImage Preprocessor]   ──▶ Grayscale (CIPhotoEffectMono) + 50% contrast boost
@@ -66,11 +66,11 @@ CopyShot runs as an ultra-lightweight menu bar utility (`LSUIElement`) with a di
 (Text instantly available)       (Expandable preview + audio feedback)
 ```
 
-1. **Hotkey Listening**: Carbon event registration intercepts `⌘⇧C` globally without requiring intrusive Accessibility permissions.
-2. **Multi-Monitor Capture**: An `OverlayWindow` is created over every attached screen with an interactive crosshair and bounding box selector.
-3. **Single-Frame Capture**: ScreenCaptureKit streams a single frame for the selected rectangle and immediately tears down the stream to release resources and remove the macOS recording indicator.
-4. **Local Neural OCR**: Preprocessed with CoreImage, Apple's Vision framework identifies character candidates, lines, and bounding boxes. CopyShot groups lines logically from top-to-bottom and left-to-right.
-5. **Immediate Feedback**: The recognized text is copied to `NSPasteboard.general` while an interactive frosted-glass notification HUD appears on the captured monitor.
+1. **Hotkey Listening**: Carbon event registration intercepts `⌘⇧C` globally without requiring Accessibility permissions.
+2. **Multi-Monitor Overlay**: Full-screen transparent overlay windows open on all connected displays. Dragging cuts out the selected frame over the target text.
+3. **Single-Frame Capture**: macOS 14+ `SCScreenshotManager.captureImage` grabs the selected physical display coordinates directly in ~35ms.
+4. **Local Neural OCR**: Preprocessed with CoreImage, Apple's Vision framework identifies text lines and groups them logically from top-to-bottom and left-to-right.
+5. **Immediate Feedback**: The recognized text is copied to `NSPasteboard.general` while an interactive HUD appears on the captured display.
 
 ---
 

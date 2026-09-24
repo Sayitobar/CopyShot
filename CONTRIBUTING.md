@@ -54,7 +54,7 @@ CopyShot/
 ### Key Architectural Guidelines
 - **Thread Safety & `@MainActor`**: AppKit UI, window management, `NSPasteboard`, and the `AppDelegate` coordinator must run on the Main Actor.
 - **Background Processing**: Heavy image filtering and Vision OCR requests must execute on background threads (`DispatchQueue.global(qos: .userInitiated)` or Swift Tasks) so the user interface never stutters or drops frames.
-- **ScreenCaptureKit Cleanup**: Ensure `SCStream` and `SCShareableContent` instances are cleanly stopped and set to `nil` immediately after single-frame capture to avoid the macOS 15+ purple screen recording indicator lingering in the menu bar.
+- **Capture Pipeline**: Use `SCScreenshotManager.captureImage` for single-frame capture with background pre-warming, avoiding continuous video streams (`SCStream`) to keep capture latency under ~40ms and prevent lingering recording indicators.
 - **Privacy First**: All OCR and processing must remain 100% on-device. No network requests are permitted except Sparkle update checks.
 
 ---
