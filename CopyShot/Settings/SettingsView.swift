@@ -91,6 +91,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
     
     private var window: NSWindow?
     private var updaterViewModel: UpdaterViewModel?
+    private var localKeyMonitor: Any?
     
     func showSettings(updaterViewModel: UpdaterViewModel? = nil) {
         if let updater = updaterViewModel {
@@ -112,6 +113,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
                 }
             }
             updateAppearance()
+            setupKeyMonitorIfNeeded()
             NSApp.activate(ignoringOtherApps: true)
             existingWindow.makeKeyAndOrderFront(nil)
             return
@@ -153,6 +155,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         self.window = newWindow
         
         updateAppearance()
+        setupKeyMonitorIfNeeded()
         
         if let screen = targetScreen {
             let screenRect = screen.visibleFrame
@@ -169,7 +172,39 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
     }
     
     func closeSettings() {
+        removeKeyMonitor()
         window?.close()
+    }
+    
+    func windowWillClose(_ notification: Notification) {
+        removeKeyMonitor()
+    }
+    
+    // MARK: - Debug Overlay Keyboard Monitor (⇧⌥⌘D only when Settings is open)
+    
+    private func setupKeyMonitorIfNeeded() {
+        guard localKeyMonitor == nil else { return }
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, let window = self.window, event.window == window else {
+                return event
+            }
+            
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if flags == [.command, .option, .shift],
+               event.charactersIgnoringModifiers?.lowercased() == "d" {
+                SettingsManager.shared.showDebugOverlay.toggle()
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                return nil // Swallow event
+            }
+            return event
+        }
+    }
+    
+    private func removeKeyMonitor() {
+        if let monitor = localKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            localKeyMonitor = nil
+        }
     }
     
     func updateAppearance() {
@@ -245,6 +280,7 @@ struct SettingsView: View {
                                 isTransitioning = false
                             }
                         }
+                        .debugZone(tab.rawValue, type: .interactive)
                     }
                 }
                 .background(alignment: .leading) {
@@ -262,10 +298,12 @@ struct SettingsView: View {
                 Divider() // Separates our Tab Bar from our Content
                     .opacity(0.5)
             }
+            .debugZone("Header Bar", type: .windowBoundary)
             .background(WindowDragArea())
             .overlay(alignment: .topLeading) {
                 // BESPOKE CUSTOM CLOSE BUTTON
                 CustomCloseButton()
+                    .debugZone("Close", type: .interactive)
                     .padding(.top, 16)
                     .padding(.leading, 18)
             }
@@ -297,8 +335,18 @@ struct SettingsView: View {
                 .padding(.horizontal, 24)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
+            .debugZone("Content Area", type: .windowBoundary)
             .clipped()
             .zIndex(1)
+        }
+        .overlay(alignment: .bottom) {
+            if settings.showDebugOverlay {
+                Text("Debug Zones Active (⇧⌥⌘D)")
+                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.green)
+                    .padding(.bottom, 8)
+                    .allowsHitTesting(false)
+            }
         }
         // Shunts content UP into the transparent titlebar void to align tabs on the traffic light row.
         // Tuned for macOS 15 titlebar geometry (28pt height). If future macOS versions alter titlebar height, adjust here.

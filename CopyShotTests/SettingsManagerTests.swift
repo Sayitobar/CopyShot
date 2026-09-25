@@ -105,4 +105,18 @@ struct SettingsManagerTests {
             #expect(!level.description.isEmpty)
         }
     }
+    
+    @Test("Debug overlay defaults to false and toggles predictably")
+    func testDebugOverlayToggle() {
+        let settings = SettingsManager.shared
+        let original = settings.showDebugOverlay
+        defer { settings.showDebugOverlay = original }
+        
+        settings.showDebugOverlay = false
+        #expect(!settings.showDebugOverlay)
+        settings.showDebugOverlay.toggle()
+        #expect(settings.showDebugOverlay)
+        settings.showDebugOverlay.toggle()
+        #expect(!settings.showDebugOverlay)
+    }
 }

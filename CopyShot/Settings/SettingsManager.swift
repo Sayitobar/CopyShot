@@ -142,6 +142,9 @@ class SettingsManager: ObservableObject {
         }
     }
     
+    /// Developer debug layout overlay state (toggled via ⇧⌥⌘D when Settings is open)
+    @Published var showDebugOverlay: Bool = false
+    
     private init() {
         // MARK: - Initial Settings Check & Assignment
         // Here we assign the default values for the first time the app is launched.

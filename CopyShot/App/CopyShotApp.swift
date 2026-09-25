@@ -76,13 +76,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         
                         FeedbackManager.showNotification(
                             title: "Text Copied",
-                            subtitle: "The recognized text has been copied to your clipboard.",
+                            subtitle: "Recognized text:",
                             body: previewText,
                             fullBody: recognizedText,
                             iconName: "checkmark.circle.fill",
                             accentColor: .adaptiveGreen,
                             soundName: "Funk",
-                            targetScreen: screen
+                            targetScreen: screen,
+                            supportsQuickActions: true
                         )
                         self.setSuccessIcon()
                     }
