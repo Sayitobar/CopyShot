@@ -116,6 +116,9 @@ struct CustomNotificationView: View {
             }
             Spacer(minLength: 0)
         }
+        // NOTE: Custom floating HUD layout tuned for macOS 15.0+ Sequoia.
+        // Geometry: 344pt width, 16pt continuous corner radius, regularMaterial.
+        // If future macOS versions adopt updated materials (e.g., Liquid Glass), gate with #available(macOS ..., *).
         .padding(16)
         .frame(width: 344, alignment: .topLeading)
         .background(.regularMaterial) // Frosty glass material look

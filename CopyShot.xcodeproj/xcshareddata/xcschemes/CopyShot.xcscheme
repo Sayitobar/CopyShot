@@ -41,7 +41,6 @@
                ReferencedContainer = "container:CopyShot.xcodeproj">
             </BuildableReference>
          </TestableReference>
-         <!-- TODO: Warning: I have manually checked "skipped=YES" to make UI tests skip the permission prompt. -->   
          <TestableReference
             skipped = "YES"
             parallelizable = "YES">

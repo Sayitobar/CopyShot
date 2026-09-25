@@ -1,6 +1,9 @@
 .agent
 .vscode/
 
+AGENTS.md
+docs/UI_ARCHITECTURE.md
+
 # macOS
 .DS_Store
 .AppleDouble

@@ -299,7 +299,9 @@ struct SettingsView: View {
             .background(WindowDragArea())
             .zIndex(2)
             
-            // 3. NATIVE CUSTOM CLOSE BUTTON
+            // 3. BESPOKE CUSTOM CLOSE BUTTON
+            // Tuned for macOS 15.0+ Sequoia traffic light geometry (12x12pt circle, aligned with tabs).
+            // If future macOS versions alter traffic light aesthetics (e.g. Liquid Glass), adjust styling here.
             CustomCloseButton()
                 .padding(.top, 16)
                 .padding(.leading, 18)
@@ -307,7 +309,9 @@ struct SettingsView: View {
                 .zIndex(3)
         }
         .frame(width: 500, alignment: .top)
-        .padding(.top, -28) // Explicitly shunts the content UP into the Transparent Titlebar void WITHOUT increasing the bound height!
+        // Shunts content UP into the transparent titlebar void to align tabs on the traffic light row.
+        // Tuned for macOS 15 titlebar geometry (28pt height). If future macOS versions alter titlebar height, adjust here.
+        .padding(.top, -28)
         .fixedSize(horizontal: false, vertical: true)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .preferredColorScheme(settings.appearance.colorScheme)
