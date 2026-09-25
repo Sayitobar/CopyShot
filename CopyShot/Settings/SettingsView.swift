@@ -68,7 +68,15 @@ struct WindowDragArea: NSViewRepresentable {
     }
 }
 
-struct SettingsViewHeightKey: PreferenceKey {
+struct SettingsHeaderHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 68
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
+    }
+}
+
+struct SettingsContentHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         let next = nextValue()
@@ -188,18 +196,11 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         }
         
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.duration = 0.35
+            context.allowsImplicitAnimation = true
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1.0)
             window.animator().setFrame(newFrame, display: true)
         }
-    }
-    
-    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        let currentFrame = sender.frame
-        let topY = currentFrame.origin.y + currentFrame.size.height
-        let newOriginY = topY - frameSize.height
-        sender.setFrameOrigin(NSPoint(x: currentFrame.origin.x, y: newOriginY))
-        return frameSize
     }
 }
 
@@ -209,62 +210,27 @@ struct SettingsView: View {
     @State private var layoutTab: SettingsTab = .general
     @State private var visibleTab: SettingsTab = .general
     @State private var isTransitioning = false
+    @State private var headerHeight: CGFloat = 68
+    @State private var contentHeight: CGFloat = 0
     @Environment(\.colorScheme) var colorScheme
     
     // Toggle content transitions ON/OFF (Slide under tab bar)
     // Does NOT restrict the tab button highlighter slide.
     private let enableContentAnimations = true
     
+    @ViewBuilder
+    private func tabContentView(for tab: SettingsTab) -> some View {
+        switch tab {
+        case .general: GeneralSettingsView()
+        case .capture: CaptureSettingsView()
+        case .notifications: NotificationsSettingsView()
+        case .about: AboutSettingsView(updaterViewModel: updaterViewModel)
+        }
+    }
+    
     var body: some View {
-        ZStack(alignment: .top) {
-            // 1. CONTENT LAYER
-            ZStack(alignment: .top) {
-                // Dummy container to snap the layout dimensions instantly WITHOUT animation
-                // This forces the container height to adjust immediately to the active tab
-                ZStack(alignment: .top) {
-                    switch layoutTab {
-                    case .general: GeneralSettingsView().hidden()
-                    case .capture: CaptureSettingsView().hidden()
-                    case .notifications: NotificationsSettingsView().hidden()
-                    case .about: AboutSettingsView(updaterViewModel: updaterViewModel).hidden()
-                    }
-                }
-                .padding(.vertical, 32)
-                .padding(.horizontal, 24)
-                .animation(nil, value: layoutTab) // Layout dimensions snap immediately
-                .frame(maxWidth: .infinity, alignment: .top)
-                .padding(.top, 68) // Exact height of the Tab Bar wrapper
-                .overlay(alignment: .top) {
-                    ZStack(alignment: .top) {
-                        // Linear Gradient Shadow that behaves exclusively as an internal under-lay, drawing BEFORE the content!
-                        LinearGradient(
-                            colors: [Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), .clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 6)
-                        .allowsHitTesting(false)
-                        
-                        // The actual visual content gracefully fades and slides entirely inside the precisely-snapped bounds
-                        ZStack(alignment: .top) {
-                            let activeTransition = enableContentAnimations ? AnyTransition.slideFade : .identity
-                            switch visibleTab {
-                            case .general: GeneralSettingsView().transition(activeTransition)
-                            case .capture: CaptureSettingsView().transition(activeTransition)
-                            case .notifications: NotificationsSettingsView().transition(activeTransition)
-                            case .about: AboutSettingsView(updaterViewModel: updaterViewModel).transition(activeTransition)
-                            }
-                        }
-                        .padding(.vertical, 32)
-                        .padding(.horizontal, 24)
-                        .frame(maxWidth: .infinity, alignment: .top)
-                    }
-                    .padding(.top, 68) // Match the boundary offset exactly
-                }
-            }
-            .zIndex(1)
-            
-            // 2. TAB BAR LAYER (ZIndex 2 so it physically overlays the rendering stack)
+        VStack(spacing: 0) {
+            // 1. TAB BAR HEADER (ZIndex 2 so it physically overlays the rendering stack)
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     ForEach(SettingsTab.allCases, id: \.self) { tab in
@@ -297,37 +263,87 @@ struct SettingsView: View {
                     .opacity(0.5)
             }
             .background(WindowDragArea())
+            .overlay(alignment: .topLeading) {
+                // BESPOKE CUSTOM CLOSE BUTTON
+                CustomCloseButton()
+                    .padding(.top, 16)
+                    .padding(.leading, 18)
+            }
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: SettingsHeaderHeightKey.self, value: geo.size.height)
+                }
+            )
             .zIndex(2)
             
-            // 3. BESPOKE CUSTOM CLOSE BUTTON
-            // Tuned for macOS 15.0+ Sequoia traffic light geometry (12x12pt circle, aligned with tabs).
-            // If future macOS versions alter traffic light aesthetics (e.g. Liquid Glass), adjust styling here.
-            CustomCloseButton()
-                .padding(.top, 16)
-                .padding(.leading, 18)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .zIndex(3)
+            // 2. CONTENT AREA
+            ZStack(alignment: .top) {
+                // Linear Gradient Shadow that behaves exclusively as an internal under-lay, drawing BEFORE the content!
+                LinearGradient(
+                    colors: [Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), .clear],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 6)
+                .allowsHitTesting(false)
+                
+                // The actual visual content gracefully fades and slides entirely inside the precisely-snapped bounds
+                ZStack(alignment: .top) {
+                    let activeTransition = enableContentAnimations ? AnyTransition.slideFade : .identity
+                    tabContentView(for: visibleTab)
+                        .transition(activeTransition)
+                }
+                .padding(.vertical, 32)
+                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .clipped()
+            .zIndex(1)
         }
-        .frame(width: 500, alignment: .top)
         // Shunts content UP into the transparent titlebar void to align tabs on the traffic light row.
         // Tuned for macOS 15 titlebar geometry (28pt height). If future macOS versions alter titlebar height, adjust here.
         .padding(.top, -28)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(minWidth: 500, maxWidth: 500, minHeight: 0, maxHeight: .infinity, alignment: .top)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
+        .background(
+            // DYNAMIC CONTENT SIZING PROBE (measures natural height of layoutTab completely detached from visible layout)
+            tabContentView(for: layoutTab)
+                .padding(.vertical, 32)
+                .padding(.horizontal, 24)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: SettingsContentHeightKey.self, value: geo.size.height)
+                    }
+                )
+                .opacity(0.001)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true),
+            alignment: .top
+        )
         .preferredColorScheme(settings.appearance.colorScheme)
         .id(settings.appearance)
         .onChange(of: settings.appearance) { _ in
             SettingsWindowManager.shared.updateAppearance()
         }
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(key: SettingsViewHeightKey.self, value: geo.size.height)
+        .onPreferenceChange(SettingsHeaderHeightKey.self) { newHeaderHeight in
+            if newHeaderHeight > 0 {
+                headerHeight = newHeaderHeight
+                updateTotalHeight()
             }
-        )
-        .onPreferenceChange(SettingsViewHeightKey.self) { newHeight in
-            if newHeight > 50 {
-                SettingsWindowManager.shared.updateWindowHeight(newHeight)
+        }
+        .onPreferenceChange(SettingsContentHeightKey.self) { newContentHeight in
+            if newContentHeight > 0 {
+                contentHeight = newContentHeight
+                updateTotalHeight()
             }
+        }
+    }
+    
+    private func updateTotalHeight() {
+        let total = headerHeight + contentHeight
+        if total > 50 {
+            SettingsWindowManager.shared.updateWindowHeight(total)
         }
     }
 }
