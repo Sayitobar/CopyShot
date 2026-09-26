@@ -38,6 +38,8 @@ class NotificationPresenter: ObservableObject {
     @Published var notificationCustomIcon: ActionIcon? = nil
     @Published var notificationAccentColor: Color = .orange
     @Published var isShelfOpen: Bool = false
+    @Published var activeSubmenu: QuickAction? = nil
+    @Published var isHoveringSubShelf: Bool = false
     
     var targetScreen: NSScreen? = nil
     var supportsQuickActions: Bool = false
@@ -47,26 +49,76 @@ class NotificationPresenter: ObservableObject {
     private var dismissTimer: AnyCancellable?
     private var notificationWindow: NotificationHUDWindow?
     private var shelfWindow: NotificationHUDWindow?
+    private var subShelfWindow: NotificationHUDWindow?
     private var hostingView: NSHostingView<AnyView>?
     private var shelfHostingView: NSHostingView<AnyView>?
+    private var subShelfHostingView: NSHostingView<AnyView>?
     private var keyEventMonitor: Any?
     
     private var isHoveringNotification: Bool = false
     private var isHoveringShelf: Bool = false
     private var hoverOutWorkItem: DispatchWorkItem?
+    private var hoverGraceTimer: DispatchWorkItem?
     private weak var previousApp: NSRunningApplication?
+    private var shelfLivenessTimer: Timer?
     
     private let fixedNotificationWindowWidth: CGFloat = 400
+    
+    /// Deterministically computed bounding box of the visible notification HUD box (inside the 400pt notificationWindow).
+    /// Used for strict hit-testing to prevent transparent window margins from hijacking hover states.
+    private var visibleNotificationBoxFrame: NSRect? {
+        guard let window = notificationWindow, isShowingNotification, window.isVisible else { return nil }
+        let boxWidth: CGFloat = 348
+        let boxHeight = max(window.frame.height - 42, 0)
+        let boxX = window.frame.origin.x + 40
+        let boxY = window.frame.origin.y + 28
+        return NSRect(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
+    }
+    
+    private func startShelfLivenessTracking() {
+        stopShelfLivenessTracking()
+        shelfLivenessTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            self?.checkMouseLiveness()
+        }
+    }
+    
+    private func stopShelfLivenessTracking() {
+        shelfLivenessTimer?.invalidate()
+        shelfLivenessTimer = nil
+    }
+    
+    private func checkMouseLiveness() {
+        guard isShelfOpen else {
+            stopShelfLivenessTracking()
+            return
+        }
+        
+        let mouseLoc = NSEvent.mouseLocation
+        let isOverMainShelf = shelfWindow?.frame.contains(mouseLoc) ?? false
+        let isOverSubShelf = (activeSubmenu != nil) && (subShelfWindow?.frame.contains(mouseLoc) ?? false)
+        let isOverNotifBox = visibleNotificationBoxFrame?.contains(mouseLoc) ?? false
+        
+        if !isOverMainShelf && !isOverSubShelf && !isOverNotifBox {
+            stopShelfLivenessTracking()
+            closeActionShelfWithAnimation()
+            startDismissTimer()
+        }
+    }
     
     // Geometry metrics for Shelf Window (with breathing margins for hover scaling & shadows)
     private let shelfPaddingLeading: CGFloat = ActionShelfView.paddingLeading
     private let shelfPaddingTop: CGFloat = ActionShelfView.paddingTop
     private let shelfPaddingBottom: CGFloat = ActionShelfView.paddingBottom
     private let shelfHoverGapTrailing: CGFloat = ActionShelfView.hoverGapTrailing
-    private let shelfPillsWidth: CGFloat = 216
+    private let shelfPillsWidth: CGFloat = ActionShelfView.pillWidth
+    private let shelfColumnGap: CGFloat = ActionShelfView.columnGap
     
-    private var shelfWindowWidth: CGFloat {
+    private var mainShelfWindowWidth: CGFloat {
         shelfPaddingLeading + shelfPillsWidth + shelfHoverGapTrailing
+    }
+    
+    private var subShelfWindowWidth: CGFloat {
+        shelfPaddingLeading + shelfPillsWidth + shelfColumnGap
     }
     
     private func calculateShelfWindowHeight(actionCount: Int) -> CGFloat {
@@ -94,9 +146,12 @@ class NotificationPresenter: ObservableObject {
         
         self.targetScreen = targetScreen
         self.supportsQuickActions = supportsQuickActions
-        self.quickActions = quickActions
         self.currentRawText = fullBody ?? body
+        self.quickActions = QuickAction.defaultActions(for: self.currentRawText)
         self.isShelfOpen = false
+        self.activeSubmenu = nil
+        self.hoverGraceTimer?.cancel()
+        self.hoverGraceTimer = nil
         self.isHoveringNotification = false
         self.isHoveringShelf = false
         
@@ -186,24 +241,25 @@ class NotificationPresenter: ObservableObject {
         guard supportsQuickActions, let notifWindow = notificationWindow, let _ = targetScreen ?? NSScreen.main else { return }
         
         isShelfOpen = true
+        activeSubmenu = nil
+        isHoveringSubShelf = false
+        hoverGraceTimer?.cancel()
+        hoverGraceTimer = nil
+        startShelfLivenessTracking()
         
-        // Calculate shelf window position:
+        // Anchor calculation:
         // Inside notificationWindow (400pt wide), notificationBox starts at origin.x + 44
         // Midpoint of the 8pt gap between shelf pills and notif box is at notifWindow.frame.origin.x + 40
         // The right edge of shelfWindow touches the midpoint boundary:
-        let shelfX = (notifWindow.frame.origin.x + 40) - shelfWindowWidth
+        let width = mainShelfWindowWidth
+        let shelfX = (notifWindow.frame.origin.x + 40) - width
         
         // Top of notification box inside notificationWindow:
         let notifBoxTopY = notifWindow.frame.origin.y + notifWindow.frame.height - 14
         let shelfHeight = calculateShelfWindowHeight(actionCount: quickActions.count)
-        
-        // Top of the first pill is at shelfPaddingTop below the top of shelfWindow.
-        // We want the top of the first pill to align with notifBoxTopY:
-        // (shelfY + shelfHeight) - shelfPaddingTop = notifBoxTopY
-        // => shelfY = notifBoxTopY + shelfPaddingTop - shelfHeight
         let shelfY = notifBoxTopY + shelfPaddingTop - shelfHeight
         
-        let shelfFrame = NSRect(x: shelfX, y: shelfY, width: shelfWindowWidth, height: shelfHeight)
+        let shelfFrame = NSRect(x: shelfX, y: shelfY, width: width, height: shelfHeight)
         
         if shelfWindow == nil {
             shelfWindow = NotificationHUDWindow(
@@ -222,20 +278,7 @@ class NotificationPresenter: ObservableObject {
             shelfWindow?.setFrame(shelfFrame, display: true)
         }
         
-        let shelfView = ActionShelfView(
-            actions: quickActions,
-            accentColor: notificationAccentColor,
-            onActionSelected: { [weak self] action in
-                self?.triggerQuickAction(action)
-            },
-            onHoverChange: { [weak self] hovering in
-                self?.handleShelfHover(hovering)
-            }
-        ).preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
-        
-        let shelfHost = NotificationHostingView(rootView: AnyView(shelfView))
-        shelfHostingView = shelfHost
-        shelfWindow?.contentView = shelfHost
+        setupMainShelfHostingView()
         
         shelfWindow?.alphaValue = 0
         shelfWindow?.orderFrontRegardless()
@@ -249,28 +292,200 @@ class NotificationPresenter: ObservableObject {
         startKeyMonitoring()
     }
     
-    private func closeActionShelfWithAnimation(completion: (() -> Void)? = nil) {
-        guard isShelfOpen, let shelf = shelfWindow else {
+    private func setupMainShelfHostingView() {
+        if shelfHostingView == nil {
+            let container = ActionShelfContainerView(presenter: self)
+            let host = NotificationHostingView(rootView: AnyView(container))
+            shelfHostingView = host
+            shelfWindow?.contentView = host
+        }
+    }
+    
+    private func openSubShelf(for action: QuickAction) {
+        guard let shelf = shelfWindow, let notifWindow = notificationWindow, let subActions = action.subActions, !subActions.isEmpty else { return }
+        
+        activeSubmenu = action
+        
+        let subWidth = subShelfWindowWidth
+        let subX = shelf.frame.origin.x - (shelfPillsWidth + shelfColumnGap)
+        
+        let notifBoxTopY = notifWindow.frame.origin.y + notifWindow.frame.height - 14
+        let subHeight = calculateShelfWindowHeight(actionCount: subActions.count)
+        let subY = notifBoxTopY + shelfPaddingTop - subHeight
+        
+        let subFrame = NSRect(x: subX, y: subY, width: subWidth, height: subHeight)
+        
+        if subShelfWindow == nil {
+            subShelfWindow = NotificationHUDWindow(
+                contentRect: subFrame,
+                styleMask: .borderless,
+                backing: .buffered,
+                defer: false
+            )
+            subShelfWindow?.isOpaque = false
+            subShelfWindow?.backgroundColor = .clear
+            subShelfWindow?.level = .floating
+            subShelfWindow?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            subShelfWindow?.hidesOnDeactivate = false
+            subShelfWindow?.acceptsMouseMovedEvents = true
+        } else {
+            subShelfWindow?.setFrame(subFrame, display: true)
+        }
+        
+        let subView = ActionSubShelfView(
+            subActions: subActions,
+            accentColor: notificationAccentColor,
+            onActionSelected: { [weak self] selectedAction in
+                self?.triggerQuickAction(selectedAction)
+            },
+            onHoverChange: { [weak self] hovering in
+                self?.handleSubShelfHover(hovering)
+            }
+        ).preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
+        
+        if let host = subShelfHostingView {
+            host.rootView = AnyView(subView)
+        } else {
+            let host = NotificationHostingView(rootView: AnyView(subView))
+            subShelfHostingView = host
+            subShelfWindow?.contentView = host
+        }
+        
+        if subShelfWindow?.alphaValue == 0 || subShelfWindow?.isVisible == false {
+            subShelfWindow?.alphaValue = 0
+            subShelfWindow?.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                subShelfWindow?.animator().alphaValue = 1.0
+            }
+        }
+    }
+    
+    private func closeSubShelfWithAnimation(completion: (() -> Void)? = nil) {
+        activeSubmenu = nil
+        isHoveringSubShelf = false
+        
+        guard let subShelf = subShelfWindow, subShelf.isVisible else {
             completion?()
             return
         }
+        
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            subShelf.animator().alphaValue = 0
+        }) {
+            subShelf.orderOut(nil)
+            self.subShelfHostingView = nil
+            completion?()
+        }
+    }
+    
+    private func closeSubShelfInstantly() {
+        activeSubmenu = nil
+        isHoveringSubShelf = false
+        subShelfWindow?.orderOut(nil)
+        subShelfHostingView = nil
+    }
+    
+    fileprivate func handleMainPillHover(action: QuickAction, hovering: Bool) {
+        if hovering {
+            hoverGraceTimer?.cancel()
+            hoverGraceTimer = nil
+            
+            if action.hasSubmenu {
+                if activeSubmenu?.id != action.id {
+                    openSubShelf(for: action)
+                }
+            } else {
+                if activeSubmenu != nil {
+                    closeSubShelfWithAnimation()
+                }
+            }
+        } else {
+            scheduleSubmenuDismissal()
+        }
+    }
+    
+    fileprivate func handleSubShelfHover(_ hovering: Bool) {
+        isHoveringSubShelf = hovering
+        
+        if hovering {
+            hoverGraceTimer?.cancel()
+            hoverGraceTimer = nil
+            hoverOutWorkItem?.cancel()
+            hoverOutWorkItem = nil
+            cancelDismissTimer()
+            startKeyMonitoring()
+        } else {
+            scheduleSubmenuDismissal()
+        }
+    }
+    
+    private func scheduleSubmenuDismissal() {
+        hoverGraceTimer?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.isShelfOpen, self.activeSubmenu != nil else { return }
+            
+            let mouseLoc = NSEvent.mouseLocation
+            let isOverSub = self.subShelfWindow?.frame.contains(mouseLoc) ?? false
+            let isOverMain = self.shelfWindow?.frame.contains(mouseLoc) ?? false
+            
+            if isOverSub {
+                return
+            }
+            
+            self.closeSubShelfWithAnimation()
+            
+            if !isOverMain {
+                self.evaluateHoverOut()
+            }
+        }
+        hoverGraceTimer = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+    }
+    
+    private func closeActionShelfWithAnimation(completion: (() -> Void)? = nil) {
+        stopShelfLivenessTracking()
+        hoverGraceTimer?.cancel()
+        hoverGraceTimer = nil
         isShelfOpen = false
         stopKeyMonitoring()
+        
+        guard let shelf = shelfWindow, shelf.isVisible else {
+            closeSubShelfInstantly()
+            completion?()
+            return
+        }
+        
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             shelf.animator().alphaValue = 0
+            self.subShelfWindow?.animator().alphaValue = 0
         }) {
             shelf.orderOut(nil)
+            self.subShelfWindow?.orderOut(nil)
             self.shelfHostingView = nil
+            self.subShelfHostingView = nil
+            self.activeSubmenu = nil
+            self.isHoveringSubShelf = false
             completion?()
         }
     }
     
     private func closeActionShelfInstantly() {
+        stopShelfLivenessTracking()
+        hoverGraceTimer?.cancel()
+        hoverGraceTimer = nil
+        activeSubmenu = nil
+        isHoveringSubShelf = false
         isShelfOpen = false
         shelfWindow?.orderOut(nil)
+        subShelfWindow?.orderOut(nil)
         shelfHostingView = nil
+        subShelfHostingView = nil
     }
     
     // MARK: - Dismissal Timers
@@ -289,6 +504,7 @@ class NotificationPresenter: ObservableObject {
     }
     
     func dismissNotification() {
+        stopShelfLivenessTracking()
         stopKeyMonitoring()
         closeActionShelfInstantly()
         isShowingNotification = false
@@ -299,6 +515,7 @@ class NotificationPresenter: ObservableObject {
     }
     
     private func hideNotificationWithAnimation(completion: (() -> Void)? = nil) {
+        stopShelfLivenessTracking()
         stopKeyMonitoring()
         self.isShowingNotification = false
         self.isShelfOpen = false
@@ -308,6 +525,7 @@ class NotificationPresenter: ObservableObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             self.notificationWindow?.animator().alphaValue = 0
             self.shelfWindow?.animator().alphaValue = 0
+            self.subShelfWindow?.animator().alphaValue = 0
         }) {
             self.dismissNotification()
             completion?()
@@ -347,7 +565,7 @@ class NotificationPresenter: ObservableObject {
         }
     }
     
-    private func handleShelfHover(_ hovering: Bool) {
+    fileprivate func handleShelfHover(_ hovering: Bool) {
         isHoveringShelf = hovering
         
         if hovering {
@@ -361,20 +579,29 @@ class NotificationPresenter: ObservableObject {
     }
     
     private func evaluateHoverOut() {
-        // Debounce slightly (80ms) to allow seamless mouse travel between ActionShelf and Notification without touching desktop
         hoverOutWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             
-            // If the cursor is on desktop (neither shelf nor notification is hovered):
-            // ActionShelf fades out smoothly (0.2s), and after 3s the notification disappears!
-            if !self.isHoveringShelf && !self.isHoveringNotification {
+            // Deterministically check cursor location against actual window frames and visible notification box
+            let mouseLoc = NSEvent.mouseLocation
+            let isOverMainShelf = self.isShelfOpen && (self.shelfWindow?.frame.contains(mouseLoc) ?? false)
+            let isOverSubShelf = self.activeSubmenu != nil && (self.subShelfWindow?.frame.contains(mouseLoc) ?? false)
+            let isOverNotif = self.visibleNotificationBoxFrame?.contains(mouseLoc) ?? false
+            
+            let isOverAnyShelf = isOverMainShelf || isOverSubShelf
+            self.isHoveringShelf = isOverAnyShelf
+            self.isHoveringNotification = isOverNotif
+            
+            // If the cursor is on desktop (neither shelf nor visible notification is hovered):
+            // All action shelves fade out smoothly (0.2s), and after 3s the notification disappears!
+            if !isOverAnyShelf && !isOverNotif {
                 self.closeActionShelfWithAnimation()
                 self.startDismissTimer()
             }
         }
         hoverOutWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: workItem)
     }
     
     // MARK: - Keyboard Monitoring (1-9 Direct Access)
@@ -396,12 +623,24 @@ class NotificationPresenter: ObservableObject {
                 return event
             }
             
+            // Escape key closes active submenu flyout if open
+            if event.keyCode == 53, self.activeSubmenu != nil {
+                self.closeSubShelfWithAnimation()
+                return nil
+            }
+            
             if let chars = event.charactersIgnoringModifiers,
                let digit = Int(chars),
                (1...9).contains(digit) {
-                if let action = self.quickActions.first(where: { $0.shortcutNumber == digit }) {
+                // If a submenu flyout is currently open, 1-9 shortcuts map to its sub-actions
+                if let submenu = self.activeSubmenu,
+                   let subActions = submenu.subActions,
+                   let subAction = subActions.first(where: { $0.shortcutNumber == digit }) {
+                    self.triggerQuickAction(subAction)
+                    return nil
+                } else if let action = self.quickActions.first(where: { $0.shortcutNumber == digit }) {
                     self.triggerQuickAction(action)
-                    return nil // Swallow keystroke
+                    return nil
                 }
             }
             return event
@@ -425,7 +664,78 @@ class NotificationPresenter: ObservableObject {
     func triggerQuickAction(_ action: QuickAction) {
         guard let rawText = currentRawText, !rawText.isEmpty else { return }
         
-        // Tactile Mac feedback & sound
+        // Slot 3: Search Web / Open URL (Zero confirmation notification on success)
+        if action.id == "search_web" {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+            FeedbackManager.playSuccessSound()
+            
+            hideNotificationWithAnimation { [weak self] in
+                guard let self = self else { return }
+                let success = WebActionHelper.execute(for: rawText)
+                if !success {
+                    FeedbackManager.showNotification(
+                        title: "Unable to Open",
+                        subtitle: "Could not open URL or search web",
+                        body: rawText,
+                        iconName: "exclamationmark.triangle.fill",
+                        accentColor: .orange,
+                        targetScreen: self.targetScreen
+                    )
+                }
+            }
+            return
+        }
+        
+        // Slot 4 & Sub-actions: On-Device Translate (macOS 15+)
+        if let targetLang = action.targetLanguageCode {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+            FeedbackManager.playSuccessSound()
+            
+            hideNotificationWithAnimation { [weak self] in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    TranslationService.shared.translate(text: rawText, targetLanguageCode: targetLang) { [weak self] result in
+                        guard let self = self else { return }
+                        switch result {
+                    case .success(let translation):
+                        ClipboardManager.copyToClipboard(text: translation.translatedText)
+                        
+                        let previewText: String
+                        if SettingsManager.shared.textPreviewLimit > 0 && translation.translatedText.count > SettingsManager.shared.textPreviewLimit {
+                            previewText = String(translation.translatedText.prefix(SettingsManager.shared.textPreviewLimit)) + "..."
+                        } else {
+                            previewText = translation.translatedText
+                        }
+                        
+                        FeedbackManager.showNotification(
+                            title: "Translated to \(translation.targetLanguageName)",
+                            subtitle: "\(translation.sourceLanguageName) → \(translation.targetLanguageName)",
+                            body: previewText,
+                            fullBody: translation.translatedText,
+                            customIcon: .system("translate"),
+                            accentColor: .adaptiveGreen,
+                            soundName: "Funk",
+                            targetScreen: self.targetScreen,
+                            supportsQuickActions: true
+                        )
+                        
+                    case .failure(let error):
+                        FeedbackManager.showNotification(
+                            title: "Translation Failed",
+                            subtitle: "Ensure language set is downloaded from Apple",
+                            body: error.localizedDescription,
+                            iconName: "exclamationmark.triangle.fill",
+                            accentColor: .orange,
+                            targetScreen: self.targetScreen
+                        )
+                    }
+                }
+            }
+        }
+        return
+        }
+        
+        // Standard String Transformations (Join Lines, Case Transforms)
         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
         FeedbackManager.playSuccessSound()
         
@@ -460,5 +770,30 @@ class NotificationPresenter: ObservableObject {
                 supportsQuickActions: true
             )
         }
+    }
+}
+
+// MARK: - Action Shelf Reactive Container
+
+private struct ActionShelfContainerView: View {
+    @ObservedObject var presenter: NotificationPresenter
+    
+    var body: some View {
+        ActionShelfView(
+            actions: presenter.quickActions,
+            accentColor: presenter.notificationAccentColor,
+            activeSubmenuId: presenter.activeSubmenu?.id,
+            isSubShelfHovered: presenter.isHoveringSubShelf,
+            onActionSelected: { [weak presenter] action in
+                presenter?.triggerQuickAction(action)
+            },
+            onMainPillHover: { [weak presenter] action, hovering in
+                presenter?.handleMainPillHover(action: action, hovering: hovering)
+            },
+            onHoverChange: { [weak presenter] hovering in
+                presenter?.handleShelfHover(hovering)
+            }
+        )
+        .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
     }
 }

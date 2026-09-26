@@ -37,10 +37,13 @@
 | **⌘⇧C (or your own)** | Re-bindable global hotkey. |
 | **Vision OCR** | Accurate & Fast modes, with language correction option. |
 | **Image Preprocessing** | Grayscale and contrast adjustments for better results. |
+| **Quick Actions** | Flyout action bars to transform text, join lines, open URLs/search, and on-device translation.* |
 | **Settings Interface** | Built with SwiftUI for a smooth, native feel. |
 | **Auto-Update** | Background updates powered by Sparkle. |
 | **Notifications** | Includes sound, haptics, icons, and a preview you can tweak. |
 | **Resource Friendly** | Uses minimal CPU and RAM. It's also very small in size. |
+
+*\*Note: On-device translation requires macOS 15.0 (Sequoia) or later. The first time a new language set is used, macOS will prompt you once to download Apple's on-device neural language set directly onto your Mac. Other Quick Actions are fully supported on macOS 14 (Sonoma)+.*
 
 ---
 
