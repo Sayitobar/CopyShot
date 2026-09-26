@@ -13,6 +13,7 @@ struct CustomNotificationView: View {
     let bodyText: String
     let fullBodyText: String?
     let iconName: String
+    var customIcon: ActionIcon? = nil
     let accentColor: Color
     
     @Environment(\.colorScheme) var colorScheme
@@ -167,12 +168,18 @@ struct CustomNotificationView: View {
     @ViewBuilder
     private func notificationBox(expanded: Bool) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: iconName)
-                .font(.system(size: 24, weight: .medium))
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(Color(white: colorScheme == .dark ? 0.15 : 0.95), accentColor)
-                .frame(width: 30)
-                .shadow(color: enableIconShadow ? .black.opacity(0.4) : .clear, radius: 4, x: 0, y: 2)
+            if let customIcon = customIcon {
+                ActionIconView(icon: customIcon, size: 24, isHovered: false, accentColor: accentColor)
+                    .frame(width: 30, height: 30)
+                    .shadow(color: enableIconShadow ? .black.opacity(0.4) : .clear, radius: 4, x: 0, y: 2)
+            } else {
+                Image(systemName: iconName.isEmpty ? "checkmark.circle.fill" : iconName)
+                    .font(.system(size: 24, weight: .medium))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color(white: colorScheme == .dark ? 0.15 : 0.95), accentColor)
+                    .frame(width: 30)
+                    .shadow(color: enableIconShadow ? .black.opacity(0.4) : .clear, radius: 4, x: 0, y: 2)
+            }
             
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)

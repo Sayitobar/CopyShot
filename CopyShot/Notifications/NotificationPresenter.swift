@@ -35,6 +35,7 @@ class NotificationPresenter: ObservableObject {
     @Published var notificationBody: String = ""
     @Published var notificationFullBody: String? = nil
     @Published var notificationIconName: String = ""
+    @Published var notificationCustomIcon: ActionIcon? = nil
     @Published var notificationAccentColor: Color = .orange
     @Published var isShelfOpen: Bool = false
     
@@ -80,7 +81,8 @@ class NotificationPresenter: ObservableObject {
         subtitle: String? = nil,
         body: String,
         fullBody: String? = nil,
-        iconName: String,
+        iconName: String = "checkmark.circle.fill",
+        customIcon: ActionIcon? = nil,
         accentColor: Color,
         targetScreen: NSScreen? = nil,
         duration: TimeInterval = 3.0,
@@ -103,6 +105,7 @@ class NotificationPresenter: ObservableObject {
         notificationBody = body
         notificationFullBody = fullBody
         notificationIconName = iconName
+        notificationCustomIcon = customIcon
         notificationAccentColor = accentColor
         isShowingNotification = true
         
@@ -129,6 +132,7 @@ class NotificationPresenter: ObservableObject {
             bodyText: notificationBody,
             fullBodyText: notificationFullBody,
             iconName: notificationIconName,
+            customIcon: notificationCustomIcon,
             accentColor: accentColor,
             isVisible: Binding(
                 get: { [weak self] in self?.isShowingNotification ?? false },
@@ -449,7 +453,7 @@ class NotificationPresenter: ObservableObject {
                 subtitle: "Processed text:",
                 body: previewText,
                 fullBody: transformedText,
-                iconName: action.iconName,
+                customIcon: action.icon,
                 accentColor: .adaptiveGreen,
                 soundName: "Funk",
                 targetScreen: self.targetScreen,

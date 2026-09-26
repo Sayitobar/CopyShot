@@ -17,14 +17,26 @@ class FeedbackManager {
     
     private init() {}
     
-    // A simple, static function to show the "Text Copied" notification.
-    static func showNotification(title: String, subtitle: String? = nil, body: String, fullBody: String? = nil, iconName: String, accentColor: Color, soundName: String? = nil, targetScreen: NSScreen? = nil, supportsQuickActions: Bool = false) {
+    // A simple, static function to show notifications.
+    static func showNotification(
+        title: String,
+        subtitle: String? = nil,
+        body: String,
+        fullBody: String? = nil,
+        iconName: String = "checkmark.circle.fill",
+        customIcon: ActionIcon? = nil,
+        accentColor: Color,
+        soundName: String? = nil,
+        targetScreen: NSScreen? = nil,
+        supportsQuickActions: Bool = false
+    ) {
         shared.presenter.showNotification(
             title: title,
             subtitle: subtitle,
             body: body,
             fullBody: fullBody,
             iconName: iconName,
+            customIcon: customIcon,
             accentColor: accentColor,
             targetScreen: targetScreen,
             supportsQuickActions: supportsQuickActions

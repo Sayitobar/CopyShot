@@ -28,11 +28,9 @@ struct ActionPillView: View {
                     .background(Color(white: colorScheme == .dark ? 0.28 : 0.86))
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 
-                // Action Icon
-                Image(systemName: action.iconName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isHovered ? accentColor : .primary)
-                    .frame(width: 18)
+                // Action Icon / Logo
+                iconView
+                    .frame(width: 18, height: 18)
                 
                 // Action Title
                 Text(action.title)
@@ -86,4 +84,16 @@ struct ActionPillView: View {
             isHovered = hovering
         }
     }
+    
+    // MARK: - Action Icon / Logo Renderer
+    
+    private var iconView: some View {
+        ActionIconView(
+            icon: action.icon,
+            size: 16,
+            isHovered: isHovered,
+            accentColor: accentColor
+        )
+    }
 }
+
