@@ -63,9 +63,18 @@ struct CustomNotificationView: View {
                     // The Real Notification Box (hover state tracked strictly on this visible box)
                     notificationBox(expanded: isExpanded)
                         .background(
-                            GeometryReader { geometry in
-                                Color.clear.preference(key: CollapsedHeightKey.self, value: geometry.size.height)
-                            }
+                            // Sizing Double: strictly for measuring collapsed height without affecting parent layout or hover bounds
+                            notificationBox(expanded: false)
+                                .opacity(0)
+                                .allowsHitTesting(false)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .background(
+                                    GeometryReader { geometry in
+                                        Color.clear.preference(key: CollapsedHeightKey.self, value: geometry.size.height)
+                                    }
+                                )
+                                .frame(width: 344, height: 0, alignment: .topLeading)
+                                .clipped()
                         )
                         .background(
                             // Sizing Double: strictly for measuring expanded height without affecting parent layout or hover bounds
@@ -106,21 +115,22 @@ struct CustomNotificationView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .onPreferenceChange(CollapsedHeightKey.self) { newHeight in
             guard newHeight > 0 else { return }
-            if compactedHeight == 0 || !isExpanded {
-                compactedHeight = newHeight
-            }
-            if !isExpanded && collapsedHeight == 0 {
-                collapsedHeight = newHeight
-                if expandedHeight == 0 {
-                    onHeightChange?(newHeight)
-                }
+            compactedHeight = newHeight
+            if !isExpanded {
+                onHeightChange?(newHeight)
             }
         }
         .onPreferenceChange(ExpandedHeightKey.self) { newHeight in
             guard newHeight > 0 else { return }
-            if expandedHeight == 0 {
-                expandedHeight = newHeight
+            expandedHeight = newHeight
+            if isExpanded {
                 onHeightChange?(newHeight)
+            }
+        }
+        .onChange(of: isExpanded) { expanded in
+            let targetHeight = expanded ? expandedHeight : compactedHeight
+            if targetHeight > 0 {
+                onHeightChange?(targetHeight)
             }
         }
     }

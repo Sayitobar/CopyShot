@@ -235,4 +235,143 @@ final class QuickActionsTests: XCTestCase {
         XCTAssertEqual(result, "This is first. This is second.")
         XCTAssertEqual(QuickActionTransforms.toSentenceCase(input), "This is first. This is second.")
     }
+    
+    // MARK: - Settings & Configuration Tests
+    
+    func testQuickActionsConfigSerialization() throws {
+        var config = QuickActionsConfig()
+        config.isEnabled = false
+        config.actionOrder = ["search_web", "join_lines", "change_case"]
+        config.disabledActionIds = ["join_lines"]
+        config.searchEngine = .duckDuckGo
+        config.defaultTranslateLanguage = "de"
+        config.showNumericShortcuts = false
+        config.playHapticsOnHover = false
+        config.subActionOrder = ["change_case": ["uppercase", "lowercase"]]
+        config.disabledSubActionIds = ["change_case": ["toggle_case"]]
+        
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(config)
+        let decoded = try JSONDecoder().decode(QuickActionsConfig.self, from: data)
+        
+        XCTAssertEqual(decoded, config)
+        XCTAssertFalse(decoded.isEnabled)
+        XCTAssertEqual(decoded.actionOrder, ["search_web", "join_lines", "change_case"])
+        XCTAssertEqual(decoded.disabledActionIds, ["join_lines"])
+        XCTAssertEqual(decoded.searchEngine, .duckDuckGo)
+        XCTAssertEqual(decoded.defaultTranslateLanguage, "de")
+        XCTAssertFalse(decoded.showNumericShortcuts)
+        XCTAssertFalse(decoded.playHapticsOnHover)
+        XCTAssertEqual(decoded.subActionOrder["change_case"], ["uppercase", "lowercase"])
+        XCTAssertEqual(decoded.disabledSubActionIds["change_case"], ["toggle_case"])
+    }
+    
+    func testDisabledQuickActionsConfigProducesNoActions() {
+        var config = QuickActionsConfig()
+        config.isEnabled = false
+        
+        let actions = QuickAction.actions(for: "Sample text", config: config)
+        XCTAssertTrue(actions.isEmpty, "When Quick Actions is disabled globally, no actions should be generated")
+    }
+    
+    func testActionReorderingAndSequentialShortcuts() {
+        var config = QuickActionsConfig()
+        // Custom order: search_web first, then join_lines, then change_case
+        config.actionOrder = ["search_web", "join_lines", "change_case"]
+        
+        let actions = QuickAction.actions(for: "Sample text", config: config)
+        XCTAssertEqual(actions.map(\.id), ["search_web", "join_lines", "change_case"])
+        XCTAssertEqual(actions.map(\.shortcutNumber), [1, 2, 3], "Shortcuts must be sequentially re-indexed 1...N based on order")
+    }
+    
+    func testDisablingSpecificActions() {
+        var config = QuickActionsConfig()
+        config.actionOrder = ["change_case", "join_lines", "search_web", "translate"]
+        config.disabledActionIds = ["join_lines"]
+        
+        let actions = QuickAction.actions(for: "Sample text", config: config)
+        let ids = actions.map(\.id)
+        XCTAssertFalse(ids.contains("join_lines"), "Disabled action must not appear in generated actions")
+        
+        // Ensure sequential shortcut numbering is maintained without gaps
+        for (idx, action) in actions.enumerated() {
+            XCTAssertEqual(action.shortcutNumber, idx + 1, "Shortcut number must be sequential with no holes")
+        }
+    }
+    
+    func testSubActionOrderingAndFiltering() {
+        var config = QuickActionsConfig()
+        // Invert case transforms order and disable toggle_case
+        config.subActionOrder["change_case"] = ["sentence_case", "uppercase", "lowercase", "title_case"]
+        config.disabledSubActionIds["change_case"] = ["uppercase"]
+        
+        let actions = QuickAction.actions(for: "Sample text", config: config)
+        guard let changeCase = actions.first(where: { $0.id == "change_case" }),
+              let subs = changeCase.subActions else {
+            XCTFail("Missing change_case action")
+            return
+        }
+        
+        let subIds = subs.map(\.id)
+        XCTAssertEqual(subIds, ["sentence_case", "lowercase", "title_case"])
+        XCTAssertFalse(subIds.contains("uppercase"))
+        XCTAssertEqual(subs.map(\.shortcutNumber), [1, 2, 3], "Sub-action shortcuts must be sequentially re-indexed")
+    }
+    
+    func testSearchEnginesURLGeneration() {
+        let query = "hello world"
+        
+        let googleURL = SearchEngine.google.searchURL(for: query)
+        XCTAssertEqual(googleURL?.absoluteString, "https://www.google.com/search?q=hello%20world")
+        
+        let ddgURL = SearchEngine.duckDuckGo.searchURL(for: query)
+        XCTAssertEqual(ddgURL?.absoluteString, "https://duckduckgo.com/?q=hello%20world")
+        
+        let bingURL = SearchEngine.bing.searchURL(for: query)
+        XCTAssertEqual(bingURL?.absoluteString, "https://www.bing.com/search?q=hello%20world")
+        
+        let kagiURL = SearchEngine.kagi.searchURL(for: query)
+        XCTAssertEqual(kagiURL?.absoluteString, "https://kagi.com/search?q=hello%20world")
+        
+        let braveURL = SearchEngine.brave.searchURL(for: query)
+        XCTAssertEqual(braveURL?.absoluteString, "https://search.brave.com/search?q=hello%20world")
+        
+        let ecosiaURL = SearchEngine.ecosia.searchURL(for: query)
+        XCTAssertEqual(ecosiaURL?.absoluteString, "https://www.ecosia.org/search?q=hello%20world")
+    }
+    
+    func testDefaultTranslateLanguageConfig() {
+        if #available(macOS 15.0, *) {
+            var config = QuickActionsConfig()
+            config.defaultTranslateLanguage = "de"
+            
+            let actions = QuickAction.actions(for: "Hello world", config: config)
+            let translate = actions.first(where: { $0.id == "translate" })
+            XCTAssertEqual(translate?.targetLanguageCode, "de")
+            XCTAssertEqual(translate?.title, "Translate (to de.)")
+            
+            // Sub-actions should not include the default language "de"
+            let subLangs = translate?.subActions?.compactMap(\.targetLanguageCode) ?? []
+            XCTAssertFalse(subLangs.contains("de"), "Sub-actions should offer alternative languages other than default")
+            XCTAssertTrue(subLangs.contains("en"), "en should now be in the alternative sub-shelf")
+        }
+    }
+    
+    func testResetQuickActionsToDefaults() {
+        let settings = SettingsManager.shared
+        let original = settings.quickActionsConfig
+        defer { settings.quickActionsConfig = original }
+        
+        settings.quickActionsConfig.isEnabled = false
+        settings.quickActionsConfig.searchEngine = .kagi
+        settings.quickActionsConfig.showNumericShortcuts = false
+        
+        settings.resetQuickActionsToDefaults()
+        
+        XCTAssertTrue(settings.quickActionsConfig.isEnabled)
+        XCTAssertEqual(settings.quickActionsConfig.searchEngine, .google)
+        XCTAssertTrue(settings.quickActionsConfig.showNumericShortcuts)
+        XCTAssertEqual(settings.quickActionsConfig.actionOrder, ["change_case", "join_lines", "search_web", "translate"])
+    }
 }
+

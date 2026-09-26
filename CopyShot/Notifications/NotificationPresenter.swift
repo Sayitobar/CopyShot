@@ -23,8 +23,19 @@ final class NotificationHUDWindow: NSWindow {
 
 /// Custom hosting view ensuring immediate first mouse acceptance and hover tracking
 final class NotificationHostingView<Content: View>: NSHostingView<Content> {
+    var isHitInNotificationBox: ((NSPoint) -> Bool)?
+    
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
+    }
+    
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let isHit = isHitInNotificationBox {
+            if !isHit(point) {
+                return nil
+            }
+        }
+        return super.hitTest(point)
     }
 }
 
@@ -57,27 +68,30 @@ class NotificationPresenter: ObservableObject {
     
     private var isHoveringNotification: Bool = false
     private var isHoveringShelf: Bool = false
+    private var currentHoveredAction: QuickAction?
     private var hoverOutWorkItem: DispatchWorkItem?
     private var hoverGraceTimer: DispatchWorkItem?
+    private var subShelfCloseToken: UUID?
     private weak var previousApp: NSRunningApplication?
     private var shelfLivenessTimer: Timer?
     
     private let fixedNotificationWindowWidth: CGFloat = 400
+    private var currentVisibleBoxHeight: CGFloat = 78
     
     /// Deterministically computed bounding box of the visible notification HUD box (inside the 400pt notificationWindow).
     /// Used for strict hit-testing to prevent transparent window margins from hijacking hover states.
     private var visibleNotificationBoxFrame: NSRect? {
         guard let window = notificationWindow, isShowingNotification, window.isVisible else { return nil }
-        let boxWidth: CGFloat = 348
-        let boxHeight = max(window.frame.height - 42, 0)
-        let boxX = window.frame.origin.x + 40
-        let boxY = window.frame.origin.y + 28
+        let boxWidth: CGFloat = 376 // Covers 28pt left arrow + 4pt gap + 344pt notification box
+        let boxHeight = currentVisibleBoxHeight > 0 ? currentVisibleBoxHeight : max(window.frame.height - 42, 0)
+        let boxX = window.frame.origin.x + 12
+        let boxY = (window.frame.origin.y + window.frame.height - 14) - boxHeight
         return NSRect(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
     }
     
     private func startShelfLivenessTracking() {
         stopShelfLivenessTracking()
-        shelfLivenessTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+        shelfLivenessTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             self?.checkMouseLiveness()
         }
     }
@@ -144,14 +158,16 @@ class NotificationPresenter: ObservableObject {
         // Dismiss any existing notification first
         dismissNotification()
         
+        let config = SettingsManager.shared.quickActionsConfig
         self.targetScreen = targetScreen
-        self.supportsQuickActions = supportsQuickActions
+        self.supportsQuickActions = supportsQuickActions && config.isEnabled
         self.currentRawText = fullBody ?? body
-        self.quickActions = QuickAction.defaultActions(for: self.currentRawText)
+        self.quickActions = QuickAction.actions(for: self.currentRawText, config: config)
         self.isShelfOpen = false
         self.activeSubmenu = nil
         self.hoverGraceTimer?.cancel()
         self.hoverGraceTimer = nil
+        self.currentVisibleBoxHeight = 78
         self.isHoveringNotification = false
         self.isHoveringShelf = false
         
@@ -193,7 +209,7 @@ class NotificationPresenter: ObservableObject {
                 get: { [weak self] in self?.isShowingNotification ?? false },
                 set: { [weak self] newValue in self?.isShowingNotification = newValue }
             ),
-            supportsQuickActions: supportsQuickActions,
+            supportsQuickActions: self.supportsQuickActions,
             isShelfOpen: Binding(
                 get: { [weak self] in self?.isShelfOpen ?? false },
                 set: { [weak self] newValue in self?.isShelfOpen = newValue }
@@ -208,9 +224,12 @@ class NotificationPresenter: ObservableObject {
                 self?.hideNotificationWithAnimation()
             },
             onHeightChange: { [weak self] newHeight in
-                guard let self = self, let _ = self.hostingView else { return }
+                guard let self = self else { return }
                 DispatchQueue.main.async {
-                    self.updateNotificationWindowHeight(newHeight)
+                    self.currentVisibleBoxHeight = newHeight
+                    if let win = self.notificationWindow, newHeight + 42 > win.frame.height {
+                        self.updateNotificationWindowHeight(newHeight)
+                    }
                 }
             },
             onExpandShelf: { [weak self] in
@@ -219,10 +238,23 @@ class NotificationPresenter: ObservableObject {
         ).preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
 
         let host = NotificationHostingView(rootView: AnyView(notificationView))
+        host.isHitInNotificationBox = { [weak self, weak host] point in
+            guard let self = self, let host = host, let window = host.window ?? self.notificationWindow else {
+                return true
+            }
+            let winHeight = window.frame.height
+            let boxHeight = max(self.currentVisibleBoxHeight, 78)
+            let thresholdY = winHeight - 14 - boxHeight - 20
+            
+            // In AppKit window coordinates, (0, 0) is bottom-left. The notification is anchored at the top.
+            // Clicks at or above thresholdY are within the visible HUD (including close and expand buttons).
+            return point.y >= thresholdY && point.y <= winHeight + 10
+        }
         hostingView = host
         notificationWindow?.contentView = host
         
-        let initialHeight: CGFloat = hostingView?.fittingSize.height ?? 100
+        let screenHeight = (targetScreen ?? NSScreen.main)?.visibleFrame.height ?? 800
+        let initialHeight: CGFloat = min(screenHeight - 20, 800)
         updateNotificationWindowHeight(initialHeight)
         
         notificationWindow?.alphaValue = 1.0 // Reset alpha before showing
@@ -304,6 +336,11 @@ class NotificationPresenter: ObservableObject {
     private func openSubShelf(for action: QuickAction) {
         guard let shelf = shelfWindow, let notifWindow = notificationWindow, let subActions = action.subActions, !subActions.isEmpty else { return }
         
+        // Invalidate any in-flight close animation block
+        subShelfCloseToken = UUID()
+        hoverGraceTimer?.cancel()
+        hoverGraceTimer = nil
+        
         activeSubmenu = action
         
         let subWidth = subShelfWindowWidth
@@ -351,9 +388,8 @@ class NotificationPresenter: ObservableObject {
             subShelfWindow?.contentView = host
         }
         
-        if subShelfWindow?.alphaValue == 0 || subShelfWindow?.isVisible == false {
-            subShelfWindow?.alphaValue = 0
-            subShelfWindow?.orderFrontRegardless()
+        subShelfWindow?.orderFrontRegardless()
+        if subShelfWindow?.alphaValue ?? 0 < 1.0 {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.2
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -371,11 +407,18 @@ class NotificationPresenter: ObservableObject {
             return
         }
         
+        let closeToken = UUID()
+        self.subShelfCloseToken = closeToken
+        
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.18
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             subShelf.animator().alphaValue = 0
-        }) {
+        }) { [weak self] in
+            guard let self = self, self.subShelfCloseToken == closeToken else {
+                completion?()
+                return
+            }
             subShelf.orderOut(nil)
             self.subShelfHostingView = nil
             completion?()
@@ -383,6 +426,7 @@ class NotificationPresenter: ObservableObject {
     }
     
     private func closeSubShelfInstantly() {
+        subShelfCloseToken = UUID()
         activeSubmenu = nil
         isHoveringSubShelf = false
         subShelfWindow?.orderOut(nil)
@@ -391,6 +435,7 @@ class NotificationPresenter: ObservableObject {
     
     fileprivate func handleMainPillHover(action: QuickAction, hovering: Bool) {
         if hovering {
+            currentHoveredAction = action
             hoverGraceTimer?.cancel()
             hoverGraceTimer = nil
             
@@ -399,12 +444,16 @@ class NotificationPresenter: ObservableObject {
                     openSubShelf(for: action)
                 }
             } else {
+                // If hovering an action without submenu, use brief grace period so fast sweeps between submenus don't drop the shelf
                 if activeSubmenu != nil {
-                    closeSubShelfWithAnimation()
+                    scheduleSubmenuDismissal(delay: 0.18)
                 }
             }
         } else {
-            scheduleSubmenuDismissal()
+            if currentHoveredAction?.id == action.id {
+                currentHoveredAction = nil
+            }
+            scheduleSubmenuDismissal(delay: 0.25)
         }
     }
     
@@ -419,14 +468,22 @@ class NotificationPresenter: ObservableObject {
             cancelDismissTimer()
             startKeyMonitoring()
         } else {
-            scheduleSubmenuDismissal()
+            scheduleSubmenuDismissal(delay: 0.25)
         }
     }
     
-    private func scheduleSubmenuDismissal() {
+    private func scheduleSubmenuDismissal(delay: TimeInterval = 0.25) {
         hoverGraceTimer?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, self.isShelfOpen, self.activeSubmenu != nil else { return }
+            
+            // If the cursor is currently hovering an action that has a submenu, keep its sub-shelf open!
+            if let current = self.currentHoveredAction, current.hasSubmenu {
+                if self.activeSubmenu?.id != current.id {
+                    self.openSubShelf(for: current)
+                }
+                return
+            }
             
             let mouseLoc = NSEvent.mouseLocation
             let isOverSub = self.subShelfWindow?.frame.contains(mouseLoc) ?? false
@@ -443,7 +500,7 @@ class NotificationPresenter: ObservableObject {
             }
         }
         hoverGraceTimer = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
     
     private func closeActionShelfWithAnimation(completion: (() -> Void)? = nil) {
@@ -671,7 +728,8 @@ class NotificationPresenter: ObservableObject {
             
             hideNotificationWithAnimation { [weak self] in
                 guard let self = self else { return }
-                let success = WebActionHelper.execute(for: rawText)
+                let engine = SettingsManager.shared.quickActionsConfig.searchEngine
+                let success = WebActionHelper.execute(for: rawText, engine: engine)
                 if !success {
                     FeedbackManager.showNotification(
                         title: "Unable to Open",

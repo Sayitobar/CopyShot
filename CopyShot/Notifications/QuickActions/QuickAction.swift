@@ -7,6 +7,9 @@
 
 import Foundation
 import SwiftUI
+#if canImport(Translation)
+import Translation
+#endif
 
 /// Visual representation for a Quick Action badge/logo.
 enum ActionIcon: Equatable {
@@ -56,46 +59,55 @@ struct QuickAction: Identifiable, Equatable {
         lhs.subActions == rhs.subActions
     }
     
-    // MARK: - Default Actions
+    // MARK: - Dynamic Configuration & Actions Generation
     
-    /// Default set of quick actions available for text captures.
+    /// Default set of quick actions available for text captures using default configuration.
     static var defaultActions: [QuickAction] {
         defaultActions(for: nil)
     }
     
-    /// Returns default quick actions dynamically adjusted for the recognized text (e.g. Open URL vs Search Web).
+    /// Returns default quick actions dynamically adjusted for the recognized text using default configuration.
     static func defaultActions(for text: String?) -> [QuickAction] {
-        // Slot 1: Change Case with 5 flyout transforms
-        let caseSubActions: [QuickAction] = [
-            QuickAction(
+        actions(for: text, config: QuickActionsConfig())
+    }
+    
+    /// Constructs ordered, active quick actions based on user configuration and recognized capture text.
+    static func actions(for text: String?, config: QuickActionsConfig) -> [QuickAction] {
+        guard config.isEnabled else { return [] }
+        
+        let isURL = text != nil && WebActionHelper.isURL(text!)
+        
+        // Base sub-actions pool for Change Case
+        let allCaseSubActions: [String: QuickAction] = [
+            "title_case": QuickAction(
                 id: "title_case",
                 title: "Title Case",
                 icon: .typography("Aa"),
                 shortcutNumber: 1,
                 transform: QuickActionTransforms.toTitleCase
             ),
-            QuickAction(
+            "uppercase": QuickAction(
                 id: "uppercase",
                 title: "UPPERCASE",
                 icon: .typography("AA"),
                 shortcutNumber: 2,
                 transform: QuickActionTransforms.toUppercase
             ),
-            QuickAction(
+            "lowercase": QuickAction(
                 id: "lowercase",
                 title: "lowercase",
                 icon: .typography("aa"),
                 shortcutNumber: 3,
                 transform: QuickActionTransforms.toLowercase
             ),
-            QuickAction(
+            "toggle_case": QuickAction(
                 id: "toggle_case",
                 title: "tOGGLE cASE",
                 icon: .typography("aA"),
                 shortcutNumber: 4,
                 transform: QuickActionTransforms.toToggleCase
             ),
-            QuickAction(
+            "sentence_case": QuickAction(
                 id: "sentence_case",
                 title: "Sentence case.",
                 icon: .system("text.alignleft"),
@@ -104,94 +116,300 @@ struct QuickAction: Identifiable, Equatable {
             )
         ]
         
-        let changeCase = QuickAction(
-            id: "change_case",
-            title: "Change Case",
-            icon: .system("textformat"),
-            shortcutNumber: 1,
-            transform: QuickActionTransforms.toTitleCase,
-            subActions: caseSubActions
-        )
-        
-        // Slot 2: Join Lines
-        let joinLines = QuickAction(
-            id: "join_lines",
-            title: "Join Lines",
-            icon: .system("text.line.2.summary"),
-            shortcutNumber: 2,
-            transform: QuickActionTransforms.joinLines
-        )
-        
-        // Slot 3: Search Web / Open URL (Dynamic based on capture content)
-        let isURL = text != nil && WebActionHelper.isURL(text!)
-        let webAction = QuickAction(
-            id: "search_web",
-            title: isURL ? "Open URL" : "Search Web",
-            icon: isURL ? .system("safari") : .system("magnifyingglass"),
-            shortcutNumber: 3,
-            transform: { $0 }
-        )
-        
-        var actions: [QuickAction] = [changeCase, joinLines, webAction]
-        
-        // Slot 4: Translate (Strictly gated to macOS 15.0+ Sequoia)
-        if #available(macOS 15.0, *) {
-            let translationSubActions: [QuickAction] = [
+        // Ordered & filtered Change Case sub-actions
+        let caseOrder = config.subActionOrder["change_case"] ?? ["title_case", "uppercase", "lowercase", "toggle_case", "sentence_case"]
+        let disabledCaseIds = Set(config.disabledSubActionIds["change_case"] ?? [])
+        let activeCaseSubActions: [QuickAction] = caseOrder
+            .filter { !disabledCaseIds.contains($0) }
+            .compactMap { allCaseSubActions[$0] }
+            .enumerated()
+            .map { index, action in
                 QuickAction(
-                    id: "translate_to_es",
-                    title: "Spanish (es)",
-                    icon: .system("globe"),
-                    shortcutNumber: 1,
-                    transform: { $0 },
-                    targetLanguageCode: "es"
-                ),
-                QuickAction(
-                    id: "translate_to_de",
-                    title: "German (de)",
-                    icon: .system("globe"),
-                    shortcutNumber: 2,
-                    transform: { $0 },
-                    targetLanguageCode: "de"
-                ),
-                QuickAction(
-                    id: "translate_to_fr",
-                    title: "French (fr)",
-                    icon: .system("globe"),
-                    shortcutNumber: 3,
-                    transform: { $0 },
-                    targetLanguageCode: "fr"
-                ),
-                QuickAction(
-                    id: "translate_to_ja",
-                    title: "Japanese (ja)",
-                    icon: .system("globe"),
-                    shortcutNumber: 4,
-                    transform: { $0 },
-                    targetLanguageCode: "ja"
-                ),
-                QuickAction(
-                    id: "translate_to_zh",
-                    title: "Chinese (zh)",
-                    icon: .system("globe"),
-                    shortcutNumber: 5,
-                    transform: { $0 },
-                    targetLanguageCode: "zh"
+                    id: action.id,
+                    title: action.title,
+                    icon: action.icon,
+                    shortcutNumber: index + 1,
+                    transform: action.transform
                 )
-            ]
-            
-            let translate = QuickAction(
-                id: "translate",
-                title: "Translate (to en.)",
-                icon: .system("translate"),
-                shortcutNumber: 4,
+            }
+        
+        // Translation sub-actions pool
+        var allTranslateSubActions: [String: QuickAction] = [:]
+        for lang in TranslationTargetLanguage.supportedLanguages {
+            allTranslateSubActions["translate_to_\(lang.code)"] = QuickAction(
+                id: "translate_to_\(lang.code)",
+                title: lang.name,
+                icon: .system("globe"),
+                shortcutNumber: 1,
                 transform: { $0 },
-                subActions: translationSubActions,
-                targetLanguageCode: "en"
+                targetLanguageCode: lang.code
             )
-            actions.append(translate)
         }
         
+        let defaultSubOrder = ["translate_to_es", "translate_to_de", "translate_to_fr", "translate_to_ja", "translate_to_zh"]
+        var configuredTranslateOrder = config.subActionOrder["translate"] ?? defaultSubOrder
+        
+        // If configured order contains the default language, swap it with "en" or first available language not in order
+        if let defaultIndex = configuredTranslateOrder.firstIndex(of: "translate_to_\(config.defaultTranslateLanguage)") {
+            let candidateLangs = ["en", "es", "de", "fr", "ja", "zh"] + TranslationTargetLanguage.supportedLanguages.map(\.code)
+            if let replacement = candidateLangs.first(where: { $0 != config.defaultTranslateLanguage && !configuredTranslateOrder.contains("translate_to_\($0)") }) {
+                configuredTranslateOrder[defaultIndex] = "translate_to_\(replacement)"
+            } else {
+                configuredTranslateOrder.remove(at: defaultIndex)
+            }
+        }
+        
+        let disabledTranslateIds = Set(config.disabledSubActionIds["translate"] ?? [])
+        let activeTranslateSubActions: [QuickAction] = configuredTranslateOrder
+            .filter { !disabledTranslateIds.contains($0) && $0 != "translate_to_\(config.defaultTranslateLanguage)" }
+            .compactMap { allTranslateSubActions[$0] }
+            .enumerated()
+            .map { index, action in
+                QuickAction(
+                    id: action.id,
+                    title: action.title,
+                    icon: action.icon,
+                    shortcutNumber: index + 1,
+                    transform: action.transform,
+                    targetLanguageCode: action.targetLanguageCode
+                )
+            }
+        
+        // Map top-level actions
+        var activeActions: [QuickAction] = []
+        let disabledActionIds = Set(config.disabledActionIds)
+        
+        for actionId in config.actionOrder where !disabledActionIds.contains(actionId) {
+            let nextShortcutNumber = activeActions.count + 1
+            
+            switch actionId {
+            case "change_case":
+                activeActions.append(
+                    QuickAction(
+                        id: "change_case",
+                        title: "Change Case",
+                        icon: .system("textformat"),
+                        shortcutNumber: nextShortcutNumber,
+                        transform: QuickActionTransforms.toTitleCase,
+                        subActions: activeCaseSubActions.isEmpty ? nil : activeCaseSubActions
+                    )
+                )
+            case "join_lines":
+                activeActions.append(
+                    QuickAction(
+                        id: "join_lines",
+                        title: "Join Lines",
+                        icon: .system("text.line.2.summary"),
+                        shortcutNumber: nextShortcutNumber,
+                        transform: QuickActionTransforms.joinLines
+                    )
+                )
+            case "search_web":
+                activeActions.append(
+                    QuickAction(
+                        id: "search_web",
+                        title: isURL ? "Open URL" : "Search Web",
+                        icon: isURL ? .system("safari") : .system("magnifyingglass"),
+                        shortcutNumber: nextShortcutNumber,
+                        transform: { $0 }
+                    )
+                )
+            case "translate":
+                if #available(macOS 15.0, *) {
+                    activeActions.append(
+                        QuickAction(
+                            id: "translate",
+                            title: "Translate (to \(config.defaultTranslateLanguage).)",
+                            icon: .system("translate"),
+                            shortcutNumber: nextShortcutNumber,
+                            transform: { $0 },
+                            subActions: activeTranslateSubActions.isEmpty ? nil : activeTranslateSubActions,
+                            targetLanguageCode: config.defaultTranslateLanguage
+                        )
+                    )
+                }
+            default:
+                break
+            }
+        }
+        
+        return activeActions
+    }
+}
+
+// MARK: - Search Engine Configuration
+
+/// Supported search engines for the Search Web quick action.
+enum SearchEngine: String, CaseIterable, Identifiable, Codable {
+    case google = "Google"
+    case duckDuckGo = "DuckDuckGo"
+    case bing = "Bing"
+    case kagi = "Kagi"
+    case brave = "Brave"
+    case ecosia = "Ecosia"
+    
+    var id: String { rawValue }
+    
+    func searchURL(for query: String) -> URL? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return nil
+        }
+        switch self {
+        case .google:
+            return URL(string: "https://www.google.com/search?q=\(encoded)")
+        case .duckDuckGo:
+            return URL(string: "https://duckduckgo.com/?q=\(encoded)")
+        case .bing:
+            return URL(string: "https://www.bing.com/search?q=\(encoded)")
+        case .kagi:
+            return URL(string: "https://kagi.com/search?q=\(encoded)")
+        case .brave:
+            return URL(string: "https://search.brave.com/search?q=\(encoded)")
+        case .ecosia:
+            return URL(string: "https://www.ecosia.org/search?q=\(encoded)")
+        }
+    }
+}
+
+// MARK: - Translation Target Language
+
+/// Supported translation destination language with localized display name.
+struct TranslationTargetLanguage: Identifiable, Hashable {
+    let code: String
+    let name: String
+    var id: String { code }
+    
+    static var supportedLanguages: [TranslationTargetLanguage] {
+        allKnownSupportedLanguages.map { lang in
+            let localizedName = Locale.current.localizedString(forIdentifier: lang.code)
+                ?? Locale(identifier: "en").localizedString(forIdentifier: lang.code)
+                ?? lang.name
+            let displayName = "\(localizedName) (\(lang.code))"
+            return TranslationTargetLanguage(code: lang.code, name: displayName)
+        }
+    }
+    
+    static let allKnownSupportedLanguages: [TranslationTargetLanguage] = [
+        TranslationTargetLanguage(code: "ar", name: "Arabic (ar)"),
+        TranslationTargetLanguage(code: "zh", name: "Chinese (zh)"),
+        TranslationTargetLanguage(code: "zh-Hant", name: "Chinese, Traditional (zh-Hant)"),
+        TranslationTargetLanguage(code: "nl", name: "Dutch (nl)"),
+        TranslationTargetLanguage(code: "en", name: "English (en)"),
+        TranslationTargetLanguage(code: "fr", name: "French (fr)"),
+        TranslationTargetLanguage(code: "de", name: "German (de)"),
+        TranslationTargetLanguage(code: "hi", name: "Hindi (hi)"),
+        TranslationTargetLanguage(code: "id", name: "Indonesian (id)"),
+        TranslationTargetLanguage(code: "it", name: "Italian (it)"),
+        TranslationTargetLanguage(code: "ja", name: "Japanese (ja)"),
+        TranslationTargetLanguage(code: "ko", name: "Korean (ko)"),
+        TranslationTargetLanguage(code: "pl", name: "Polish (pl)"),
+        TranslationTargetLanguage(code: "pt", name: "Portuguese (pt)"),
+        TranslationTargetLanguage(code: "ru", name: "Russian (ru)"),
+        TranslationTargetLanguage(code: "es", name: "Spanish (es)"),
+        TranslationTargetLanguage(code: "th", name: "Thai (th)"),
+        TranslationTargetLanguage(code: "tr", name: "Turkish (tr)"),
+        TranslationTargetLanguage(code: "uk", name: "Ukrainian (uk)"),
+        TranslationTargetLanguage(code: "vi", name: "Vietnamese (vi)")
+    ]
+}
+
+// MARK: - Quick Actions Configuration Model
+
+/// Unified configuration for Quick Action ordering, visibility, and action-specific parameters.
+struct QuickActionsConfig: Codable, Equatable {
+    var isEnabled: Bool = true
+    var actionOrder: [String] = ["change_case", "join_lines", "search_web", "translate"]
+    var disabledActionIds: [String] = []
+    
+    // Sub-actions ordering & visibility
+    var subActionOrder: [String: [String]] = [
+        "change_case": ["title_case", "uppercase", "lowercase", "toggle_case", "sentence_case"],
+        "translate": ["translate_to_es", "translate_to_de", "translate_to_fr", "translate_to_ja", "translate_to_zh"]
+    ]
+    var disabledSubActionIds: [String: [String]] = [:]
+    
+    // Action-specific parameters
+    var searchEngine: SearchEngine = .google
+    var defaultTranslateLanguage: String = "en"
+    
+    // Ergonomics & Preferences
+    var showNumericShortcuts: Bool = true
+    var playHapticsOnHover: Bool = true
+}
+
+// MARK: - Action Metadata Registry
+
+/// Declarative metadata for built-in Quick Actions, utilized by the Settings configuration interface.
+struct ActionMetadata: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let description: String
+    let icon: ActionIcon
+    let hasSubActions: Bool
+    let hasParameters: Bool
+    
+    static var allActions: [ActionMetadata] {
+        var actions: [ActionMetadata] = [
+            ActionMetadata(
+                id: "change_case",
+                title: "Change Case",
+                description: "Format text into Title Case, UPPERCASE, lowercase, and more.",
+                icon: .system("textformat"),
+                hasSubActions: true,
+                hasParameters: false
+            ),
+            ActionMetadata(
+                id: "join_lines",
+                title: "Join Lines",
+                description: "Merge wrapped text into a single paragraph without breaking true breaks.",
+                icon: .system("text.line.2.summary"),
+                hasSubActions: false,
+                hasParameters: false
+            ),
+            ActionMetadata(
+                id: "search_web",
+                title: "Search Web",
+                description: "Directly open detected web links or search selected text online.",
+                icon: .system("magnifyingglass"),
+                hasSubActions: false,
+                hasParameters: true
+            )
+        ]
+        if #available(macOS 15.0, *) {
+            actions.append(
+                ActionMetadata(
+                    id: "translate",
+                    title: "Translate",
+                    description: "Private neural translation powered by Apple Translation.",
+                    icon: .system("globe"),
+                    hasSubActions: true,
+                    hasParameters: true
+                )
+            )
+        }
         return actions
+    }
+    
+    static let caseSubActionsMetadata: [ActionMetadata] = [
+        ActionMetadata(id: "title_case", title: "Title Case", description: "Capitalize every principal word", icon: .typography("Aa"), hasSubActions: false, hasParameters: false),
+        ActionMetadata(id: "uppercase", title: "UPPERCASE", description: "Convert all characters to uppercase", icon: .typography("AA"), hasSubActions: false, hasParameters: false),
+        ActionMetadata(id: "lowercase", title: "lowercase", description: "Convert all characters to lowercase", icon: .typography("aa"), hasSubActions: false, hasParameters: false),
+        ActionMetadata(id: "toggle_case", title: "tOGGLE cASE", description: "Invert uppercase and lowercase characters", icon: .typography("aA"), hasSubActions: false, hasParameters: false),
+        ActionMetadata(id: "sentence_case", title: "Sentence case.", description: "Capitalize only the first letter of sentences", icon: .system("text.alignleft"), hasSubActions: false, hasParameters: false)
+    ]
+    
+    static var translateSubActionsMetadata: [ActionMetadata] {
+        TranslationTargetLanguage.supportedLanguages.map { lang in
+            ActionMetadata(
+                id: "translate_to_\(lang.code)",
+                title: lang.name,
+                description: "Translate to \(lang.name)",
+                icon: .system("globe"),
+                hasSubActions: false,
+                hasParameters: false
+            )
+        }
     }
 }
 
@@ -237,22 +455,17 @@ enum WebActionHelper {
         detectURL(in: text) != nil
     }
     
-    /// Generates a Google Search URL with percent-encoded query.
-    static func searchURL(for query: String) -> URL? {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://www.google.com/search?q=\(encoded)") else {
-            return nil
-        }
-        return url
+    /// Generates a Search URL with percent-encoded query for the specified search engine.
+    static func searchURL(for query: String, engine: SearchEngine = .google) -> URL? {
+        engine.searchURL(for: query)
     }
     
     /// Executes the open URL or web search action in the user's default browser.
     @discardableResult
-    static func execute(for text: String) -> Bool {
+    static func execute(for text: String, engine: SearchEngine = .google) -> Bool {
         if let url = detectURL(in: text) {
             return NSWorkspace.shared.open(url)
-        } else if let searchURL = searchURL(for: text) {
+        } else if let searchURL = engine.searchURL(for: text) {
             return NSWorkspace.shared.open(searchURL)
         }
         return false

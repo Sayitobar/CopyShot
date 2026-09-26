@@ -27,12 +27,14 @@ struct ActionPillView: View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
                 // Number badge for 1-9 direct keyboard access
-                Text("\(action.shortcutNumber)")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
-                    .background(Color(white: colorScheme == .dark ? 0.28 : 0.86))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                if SettingsManager.shared.quickActionsConfig.showNumericShortcuts {
+                    Text("\(action.shortcutNumber)")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(Color(white: colorScheme == .dark ? 0.28 : 0.86))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
                 
                 // Action Icon / Logo
                 iconView
@@ -74,27 +76,28 @@ struct ActionPillView: View {
             .overlay(
                 // Hover & active highlight overlay
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.primary.opacity(isActive ? (colorScheme == .dark ? 0.12 : 0.07) : 0))
+                    .fill(Color.primary.opacity(isHovered ? (colorScheme == .dark ? 0.12 : 0.07) : (isSubmenuActive ? (colorScheme == .dark ? 0.06 : 0.04) : 0)))
             )
             .overlay(
                 // Authentic Apple light boundary stroke
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(
                         colorScheme == .dark
-                            ? Color(white: 1.0, opacity: isActive ? 0.35 : 0.2)
-                            : Color(white: 0.0, opacity: isActive ? 0.18 : 0.08),
+                            ? Color(white: 1.0, opacity: isHovered ? 0.35 : (isSubmenuActive ? 0.25 : 0.2))
+                            : Color(white: 0.0, opacity: isHovered ? 0.18 : (isSubmenuActive ? 0.12 : 0.08)),
                         lineWidth: 0.5
                     )
             )
-            .shadow(color: Color.black.opacity(isActive ? 0.14 : 0.08), radius: isActive ? 8 : 4, x: 0, y: isActive ? 4 : 2)
-            .scaleEffect(isActive ? 1.015 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isActive)
+            .shadow(color: Color.black.opacity(isHovered ? 0.14 : (isSubmenuActive ? 0.10 : 0.08)), radius: isHovered ? 8 : 4, x: 0, y: isHovered ? 4 : 2)
+            .scaleEffect(isHovered ? 1.015 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: isHovered)
+            .animation(.easeInOut(duration: 0.15), value: isSubmenuActive)
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .debugZone("Pill \(action.shortcutNumber)", type: .interactive)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            if hovering && !isHovered {
+            if hovering && !isHovered && SettingsManager.shared.quickActionsConfig.playHapticsOnHover {
                 // Tactile Mac feedback on hover
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
             }

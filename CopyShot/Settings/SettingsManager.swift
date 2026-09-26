@@ -37,6 +37,7 @@ enum SettingsKeys {
     static let textPreviewLimit = "textPreviewLimit"
     static let appAppearance = "appAppearance"
     static let playNotificationSound = "playNotificationSound"
+    static let quickActionsConfig = "quickActionsConfig"
 }
 
 // Using an enum for the recognition level makes our code safer and clearer.
@@ -145,10 +146,27 @@ class SettingsManager: ObservableObject {
     /// Developer debug layout overlay state (toggled via ⇧⌥⌘D when Settings is open)
     @Published var showDebugOverlay: Bool = false
     
+    /// Quick Actions configuration (ordering, enabled state, parameters)
+    @Published var quickActionsConfig: QuickActionsConfig {
+        didSet {
+            if let data = try? JSONEncoder().encode(quickActionsConfig) {
+                UserDefaults.standard.set(data, forKey: SettingsKeys.quickActionsConfig)
+            }
+        }
+    }
+    
     private init() {
         // MARK: - Initial Settings Check & Assignment
         // Here we assign the default values for the first time the app is launched.
         // If a setting does not exist in UserDefaults (is nil), we provide the fallback default.
+        
+        // Quick Actions Configuration (Default: QuickActionsConfig())
+        if let data = UserDefaults.standard.data(forKey: SettingsKeys.quickActionsConfig),
+           let decoded = try? JSONDecoder().decode(QuickActionsConfig.self, from: data) {
+            self.quickActionsConfig = decoded
+        } else {
+            self.quickActionsConfig = QuickActionsConfig()
+        }
         
         // Recognition Level (Default: Accurate)
         if UserDefaults.standard.object(forKey: SettingsKeys.recognitionLevel) == nil {
@@ -231,6 +249,11 @@ class SettingsManager: ObservableObject {
     // Reset hotkeys to defaults
     func resetHotkeysToDefaults() {
         captureHotkey = HotkeyConfig.defaultCapture
+    }
+    
+    // Reset quick actions to defaults
+    func resetQuickActionsToDefaults() {
+        quickActionsConfig = QuickActionsConfig()
     }
     
     // Check if hotkey is already in use

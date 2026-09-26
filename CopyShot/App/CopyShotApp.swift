@@ -83,7 +83,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                             accentColor: .adaptiveGreen,
                             soundName: "Funk",
                             targetScreen: screen,
-                            supportsQuickActions: true
+                            supportsQuickActions: SettingsManager.shared.quickActionsConfig.isEnabled
                         )
                         self.setSuccessIcon()
                     }

@@ -10,6 +10,7 @@ enum SettingsTab: String, CaseIterable {
     case general = "General"
     case capture = "OCR & Capture"
     case notifications = "Notifications"
+    case quickActions = "Quick Actions"
     case about = "About"
     
     var iconName: String {
@@ -17,6 +18,7 @@ enum SettingsTab: String, CaseIterable {
         case .general: return "gearshape"
         case .capture: return "camera.viewfinder"
         case .notifications: return "bell"
+        case .quickActions: return "rectangle.and.pencil.and.ellipsis"
         case .about: return "info.circle"
         }
     }
@@ -84,6 +86,22 @@ struct SettingsContentHeightKey: PreferenceKey {
     }
 }
 
+struct ViewportHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
+    }
+}
+
+struct LiveContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
+    }
+}
+
 // MARK: - Settings Window Manager
 @MainActor
 final class SettingsWindowManager: NSObject, NSWindowDelegate {
@@ -130,7 +148,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: settingsView)
         
         let newWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 260),
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 260),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -216,14 +234,23 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         }
     }
     
+    var currentScreen: NSScreen? {
+        return window?.screen ?? NSScreen.main
+    }
+    
     func updateWindowHeight(_ newHeight: CGFloat) {
         guard let window = self.window else { return }
         let currentFrame = window.frame
-        if abs(currentFrame.height - newHeight) < 1 { return }
+        
+        let screen = window.screen ?? NSScreen.main
+        let maxScreenHeight = max((screen?.visibleFrame.height ?? 800) - 80, 300)
+        let targetHeight = min(newHeight, maxScreenHeight)
+        
+        if abs(currentFrame.height - targetHeight) < 1 { return }
         
         let topY = currentFrame.origin.y + currentFrame.size.height
-        let newOriginY = topY - newHeight
-        let newFrame = NSRect(x: currentFrame.origin.x, y: newOriginY, width: currentFrame.width, height: newHeight)
+        let newOriginY = topY - targetHeight
+        let newFrame = NSRect(x: currentFrame.origin.x, y: newOriginY, width: currentFrame.width, height: targetHeight)
         
         if !window.isVisible {
             window.setFrame(newFrame, display: true)
@@ -247,6 +274,8 @@ struct SettingsView: View {
     @State private var isTransitioning = false
     @State private var headerHeight: CGFloat = 68
     @State private var contentHeight: CGFloat = 0
+    @State private var liveContentHeight: CGFloat = 0
+    @State private var viewportHeight: CGFloat = 0
     @Environment(\.colorScheme) var colorScheme
     
     // Toggle content transitions ON/OFF (Slide under tab bar)
@@ -259,6 +288,7 @@ struct SettingsView: View {
         case .general: GeneralSettingsView()
         case .capture: CaptureSettingsView()
         case .notifications: NotificationsSettingsView()
+        case .quickActions: QuickActionsSettingsView()
         case .about: AboutSettingsView(updaterViewModel: updaterViewModel)
         }
     }
@@ -267,7 +297,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             // 1. TAB BAR HEADER (ZIndex 2 so it physically overlays the rendering stack)
             VStack(spacing: 0) {
-                HStack(spacing: 8) {
+                HStack(spacing: TabButton.tabSpacing) {
                     ForEach(SettingsTab.allCases, id: \.self) { tab in
                         TabButton(tab: tab, isSelected: visibleTab == tab, isTransitioning: isTransitioning) {
                             if visibleTab == tab { return }
@@ -288,8 +318,8 @@ struct SettingsView: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(colorScheme == .dark ? Color(red: 70/255, green: 70/255, blue: 70/255) : Color(red: 226/255, green: 226/255, blue: 226/255))
                         .shadow(color: .clear, radius: 0)
-                        .frame(width: 86, height: 46)
-                        .offset(x: index * (86 + 8))
+                        .frame(width: TabButton.tabWidth, height: TabButton.tabHeight)
+                        .offset(x: index * (TabButton.tabWidth + TabButton.tabSpacing))
                 }
                 .padding(.top, 12)
                 .padding(.bottom, 10)
@@ -316,7 +346,24 @@ struct SettingsView: View {
             
             // 2. CONTENT AREA
             ZStack(alignment: .top) {
-                // Linear Gradient Shadow that behaves exclusively as an internal under-lay, drawing BEFORE the content!
+                ScrollView(.vertical, showsIndicators: isScrollNeeded) {
+                    ZStack(alignment: .top) {
+                        let activeTransition = enableContentAnimations ? AnyTransition.slideFade : .identity
+                        tabContentView(for: visibleTab)
+                            .transition(activeTransition)
+                    }
+                    .padding(.vertical, 32)
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: LiveContentHeightKey.self, value: geo.size.height)
+                        }
+                    )
+                }
+                .scrollDisabled(!isScrollNeeded)
+                
+                // Linear Gradient Shadow that behaves exclusively as an internal under-lay, drawing on top of scrolled content!
                 LinearGradient(
                     colors: [Color.black.opacity(colorScheme == .dark ? 0.2 : 0.05), .clear],
                     startPoint: .top,
@@ -324,16 +371,16 @@ struct SettingsView: View {
                 )
                 .frame(height: 6)
                 .allowsHitTesting(false)
-                
-                // The actual visual content gracefully fades and slides entirely inside the precisely-snapped bounds
-                ZStack(alignment: .top) {
-                    let activeTransition = enableContentAnimations ? AnyTransition.slideFade : .identity
-                    tabContentView(for: visibleTab)
-                        .transition(activeTransition)
+            }
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: ViewportHeightKey.self, value: geo.size.height)
                 }
-                .padding(.vertical, 32)
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity, alignment: .top)
+            )
+            .onPreferenceChange(ViewportHeightKey.self) { newViewportHeight in
+                if newViewportHeight > 0 {
+                    viewportHeight = newViewportHeight
+                }
             }
             .debugZone("Content Area", type: .windowBoundary)
             .clipped()
@@ -351,7 +398,7 @@ struct SettingsView: View {
         // Shunts content UP into the transparent titlebar void to align tabs on the traffic light row.
         // Tuned for macOS 15 titlebar geometry (28pt height). If future macOS versions alter titlebar height, adjust here.
         .padding(.top, -28)
-        .frame(minWidth: 500, maxWidth: 500, minHeight: 0, maxHeight: .infinity, alignment: .top)
+        .frame(minWidth: 540, maxWidth: 540, minHeight: 0, maxHeight: .infinity, alignment: .top)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .background(
             // DYNAMIC CONTENT SIZING PROBE (measures natural height of layoutTab completely detached from visible layout)
@@ -386,6 +433,16 @@ struct SettingsView: View {
                 updateTotalHeight()
             }
         }
+        .onPreferenceChange(LiveContentHeightKey.self) { newLiveHeight in
+            if newLiveHeight > 0 {
+                liveContentHeight = newLiveHeight
+            }
+        }
+    }
+    
+    private var isScrollNeeded: Bool {
+        guard viewportHeight > 50 else { return false }
+        return liveContentHeight > (viewportHeight + 2)
     }
     
     private func updateTotalHeight() {
@@ -403,6 +460,10 @@ struct TabButton: View {
     let isTransitioning: Bool
     let action: () -> Void
     
+    static let tabWidth: CGFloat = 84
+    static let tabHeight: CGFloat = 46
+    static let tabSpacing: CGFloat = 6
+    
     @State private var isHovered = false
     @Environment(\.colorScheme) var colorScheme
     
@@ -419,12 +480,15 @@ struct TabButton: View {
                     .frame(height: 18)
                 
                 Text(tab.rawValue)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(isSelected ? .primary : (isHovered && !isTransitioning ? .primary : .secondary))
+                    .lineLimit(1)
+                    .allowsTightening(true)
+                    .minimumScaleFactor(0.85)
                     .animation(nil, value: isSelected) // Instant color swap, no interpolation during slide
                     .frame(height: 14)
             }
-            .frame(width: 86, height: 46)
+            .frame(width: Self.tabWidth, height: Self.tabHeight)
             .contentShape(Rectangle()) // Ensures dead-space is clickable
             .background(
                 Group {
