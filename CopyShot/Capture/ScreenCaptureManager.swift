@@ -8,11 +8,48 @@
 import SwiftUI
 import ScreenCaptureKit
 
+struct CaptureRequestState {
+    private(set) var activeID: UUID?
+    private(set) var latestID: UUID?
+
+    mutating func begin() -> UUID? {
+        guard activeID == nil else { return nil }
+        let id = UUID()
+        activeID = id
+        latestID = id
+        return id
+    }
+
+    func isCurrent(_ id: UUID) -> Bool { activeID == id }
+    func isLatest(_ id: UUID) -> Bool { latestID == id }
+
+    @discardableResult
+    mutating func finish(_ id: UUID) -> Bool {
+        guard activeID == id else { return false }
+        activeID = nil
+        return true
+    }
+}
+
 @MainActor
 class ScreenCaptureManager: NSObject {
+
+    struct CaptureGeometry {
+        let sourceRect: CGRect
+        let pixelWidth: Int
+        let pixelHeight: Int
+    }
+
+    static func captureGeometry(for rect: CGRect, scaleFactor: CGFloat) -> CaptureGeometry {
+        CaptureGeometry(
+            sourceRect: rect,
+            pixelWidth: max(1, Int(rect.width * scaleFactor)),
+            pixelHeight: max(1, Int(rect.height * scaleFactor))
+        )
+    }
     
     private var overlayWindows: [OverlayWindow] = []
-    private var isCaptureActive = false
+    private var requestState = CaptureRequestState()
     
     struct CaptureSelection {
         let rect: CGRect
@@ -22,7 +59,11 @@ class ScreenCaptureManager: NSObject {
     private var selectedRegion: CaptureSelection?
     private var streamContent: SCShareableContent?
     private var previousApp: NSRunningApplication?
-    var onCaptureComplete: ((CGImage?, NSScreen?) -> Void)?
+    var onCaptureComplete: ((CGImage?, NSScreen?, UUID) -> Void)?
+
+    func isLatestCapture(_ requestID: UUID) -> Bool {
+        requestState.isLatest(requestID)
+    }
 
     // MARK: - Lifecycle & Pre-warming
     
@@ -36,21 +77,22 @@ class ScreenCaptureManager: NSObject {
     // MARK: - UI Flow
     
     func startCapture() {
-        isCaptureActive = true
+        guard let requestID = requestState.begin() else { return }
         previousApp = NSWorkspace.shared.frontmostApplication
-        Task { await showOverlay() }
+        Task { await showOverlay(for: requestID) }
     }
     
-    private func showOverlay() async {
-        guard overlayWindows.isEmpty else { return }
+    private func showOverlay(for requestID: UUID) async {
+        guard requestState.isCurrent(requestID), overlayWindows.isEmpty else { return }
         do {
-            streamContent = try await SCShareableContent.current
+            let content = try await SCShareableContent.current
+            guard requestState.isCurrent(requestID) else { return }
+            streamContent = content
         } catch {
             log("Permission Error: \(error.localizedDescription)", type: .error)
-            complete(with: nil)
+            complete(with: nil, for: requestID)
             return
         }
-        
         let onCaptureAction: (CGRect, NSScreen) -> Void = { [weak self] localRect, screen in
             #if DEBUG
             CaptureBenchmarkTracker.shared.recordMouseRelease()
@@ -58,13 +100,13 @@ class ScreenCaptureManager: NSObject {
             Task { @MainActor in
                 guard let self = self else { return }
                 // The first gesture to end wins.
-                if !self.overlayWindows.isEmpty {
+                if self.requestState.isCurrent(requestID), !self.overlayWindows.isEmpty {
                     self.selectedRegion = CaptureSelection(rect: localRect, screen: screen)
                     self.closeOverlay()
                     if localRect != .zero {
-                        await self.captureSelection()
+                        await self.captureSelection(for: requestID)
                     } else {
-                        self.complete(with: nil)
+                        self.complete(with: nil, for: requestID)
                     }
                 }
             }
@@ -81,7 +123,7 @@ class ScreenCaptureManager: NSObject {
             window.sharingType = .none // Excludes overlay from ScreenCaptureKit recordings
             window.contentView = ActionHostingView(rootView: captureView)
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-            window.onEscape = { [weak self] in Task { @MainActor in self?.cancelCapture() } }
+            window.onEscape = { [weak self] in Task { @MainActor in self?.cancelCapture(for: requestID) } }
             overlayWindows.append(window)
         }
         
@@ -103,24 +145,26 @@ class ScreenCaptureManager: NSObject {
         previousApp = nil
     }
     
-    private func cancelCapture() {
+    private func cancelCapture(for requestID: UUID) {
+        guard requestState.isCurrent(requestID) else { return }
         closeOverlay()
-        complete(with: nil)
+        complete(with: nil, for: requestID)
     }
     
     // MARK: - Capture Flow
     
     /// Captures the selected screen region instantly using macOS 14+ SCScreenshotManager.
-    private func captureSelection() async {
+    private func captureSelection(for requestID: UUID) async {
+        guard requestState.isCurrent(requestID) else { return }
         guard let content = streamContent, let selection = selectedRegion else {
             log("Error: Missing shareable content or selection data.", type: .error)
-            complete(with: nil)
+            complete(with: nil, for: requestID)
             return
         }
         
         guard let targetDisplay = findMatchingDisplay(for: selection.screen, in: content) else {
             log("Error: Could not find matching SCDisplay for screen.", type: .error)
-            complete(with: nil)
+            complete(with: nil, for: requestID)
             return
         }
         
@@ -133,10 +177,10 @@ class ScreenCaptureManager: NSObject {
             CaptureBenchmarkTracker.shared.recordCaptureAcquired()
             #endif
             log("Frame captured successfully (\(cgImage.width)x\(cgImage.height) px).")
-            complete(with: cgImage)
+            complete(with: cgImage, for: requestID)
         } catch {
             log("SCScreenshotManager capture failed: \(error.localizedDescription)", type: .error)
-            complete(with: nil)
+            complete(with: nil, for: requestID)
         }
     }
     
@@ -152,27 +196,26 @@ class ScreenCaptureManager: NSObject {
     private func makeCaptureConfiguration(display: SCDisplay, selection: CaptureSelection) -> (SCContentFilter, SCStreamConfiguration) {
         let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
         let config = SCStreamConfiguration()
-        let scaleFactor = selection.screen.backingScaleFactor
+        let geometry = Self.captureGeometry(for: selection.rect, scaleFactor: selection.screen.backingScaleFactor)
         
-        config.sourceRect = selection.rect
-        config.width = max(1, Int(selection.rect.width * scaleFactor))
-        config.height = max(1, Int(selection.rect.height * scaleFactor))
+        config.sourceRect = geometry.sourceRect
+        config.width = geometry.pixelWidth
+        config.height = geometry.pixelHeight
         config.scalesToFit = true
         config.showsCursor = false
         
         return (filter, config)
     }
     
-    private func complete(with image: CGImage?) {
-        guard isCaptureActive else { return }
-        isCaptureActive = false
+    private func complete(with image: CGImage?, for requestID: UUID) {
+        guard requestState.finish(requestID) else { return }
         
         streamContent = nil
         let activeScreen = selectedRegion?.screen
         selectedRegion = nil
         
         log("Capture sequence completed. Success: \(image != nil)")
-        onCaptureComplete?(image, activeScreen)
+        onCaptureComplete?(image, activeScreen, requestID)
     }
 
     // MARK: - Logging helper

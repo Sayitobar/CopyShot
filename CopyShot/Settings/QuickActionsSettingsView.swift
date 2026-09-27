@@ -51,6 +51,7 @@ struct QuickActionsSettingsView: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
             }
+            .accessibilityIdentifier("settings-quick-actions-master")
             
             if settings.quickActionsConfig.isEnabled {
                 // MARK: - Ergonomics & Preferences (Directly under Quick Actions)

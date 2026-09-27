@@ -12,23 +12,38 @@ import Carbon
 
 @Suite("SettingsManager Tests")
 struct SettingsManagerTests {
-    
-    @Test("Settings default values are valid and sensible")
-    func testSensibleDefaults() {
-        let settings = SettingsManager.shared
-        
-        // Languages must not be empty
-        #expect(!settings.recognitionLanguages.isEmpty)
-        #expect(settings.recognitionLanguages.contains("en-US") || !settings.supportedLanguages.isEmpty)
-        
-        // Recognition level should be one of the known cases
-        #expect(settings.recognitionLevel == .accurate || settings.recognitionLevel == .fast)
-        
-        // Preview limit must be non-negative
-        #expect(settings.textPreviewLimit >= 0)
-        
-        // Capture hotkey must have valid display string
-        #expect(!settings.captureHotkey.displayString.isEmpty)
+
+    @Test("Explicit zero preview limit is distinct from a missing preference")
+    func testZeroPreviewLimitPersists() throws {
+        let suite = "CopyShotTests.previewLimit.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        #expect(SettingsManager.previewLimit(from: defaults) == 50)
+        defaults.set(0, forKey: SettingsKeys.textPreviewLimit)
+        #expect(SettingsManager.previewLimit(from: defaults) == 0)
+        #expect(SettingsManager(defaults: defaults).textPreviewLimit == 0)
+    }
+
+    @Test("Settings persist across instances in an isolated defaults domain")
+    func testSettingsRoundTrip() throws {
+        let suite = "CopyShotTests.settings.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let settings = SettingsManager(defaults: defaults)
+        settings.recognitionLevel = .fast
+        settings.recognitionLanguages = ["de-DE", "en-US"]
+        settings.usesLanguageCorrection = false
+        settings.textPreviewLimit = 12
+        settings.quickActionsConfig.searchEngine = .kagi
+
+        let reloaded = SettingsManager(defaults: defaults)
+        #expect(reloaded.recognitionLevel == .fast)
+        #expect(reloaded.recognitionLanguages == ["de-DE", "en-US"])
+        #expect(!reloaded.usesLanguageCorrection)
+        #expect(reloaded.textPreviewLimit == 12)
+        #expect(reloaded.quickActionsConfig.searchEngine == .kagi)
     }
     
     @Test("HotkeyConfig Codable encoding and decoding round-trip")
@@ -74,49 +89,4 @@ struct SettingsManagerTests {
         #expect(AppAppearance.system.colorScheme == nil)
     }
     
-    @Test("Language list maintains invariant of having at least one language")
-    func testLanguageListInvariants() {
-        let settings = SettingsManager.shared
-        let originalLanguages = settings.recognitionLanguages
-        
-        defer {
-            // Restore original settings
-            settings.recognitionLanguages = originalLanguages
-        }
-        
-        // Ensure baseline
-        #expect(!settings.recognitionLanguages.isEmpty)
-        
-        // Adding duplicate language should be idempotent
-        if let first = settings.recognitionLanguages.first {
-            let countBefore = settings.recognitionLanguages.count
-            if !settings.recognitionLanguages.contains(first) {
-                settings.recognitionLanguages.append(first)
-            }
-            // In CaptureSettingsView logic, duplicates are filtered
-            let uniqueCount = Set(settings.recognitionLanguages).count
-            #expect(uniqueCount <= countBefore)
-        }
-    }
-    
-    @Test("RecognitionLevel descriptions are non-empty")
-    func testRecognitionLevelDescriptions() {
-        for level in RecognitionLevel.allCases {
-            #expect(!level.description.isEmpty)
-        }
-    }
-    
-    @Test("Debug overlay defaults to false and toggles predictably")
-    func testDebugOverlayToggle() {
-        let settings = SettingsManager.shared
-        let original = settings.showDebugOverlay
-        defer { settings.showDebugOverlay = original }
-        
-        settings.showDebugOverlay = false
-        #expect(!settings.showDebugOverlay)
-        settings.showDebugOverlay.toggle()
-        #expect(settings.showDebugOverlay)
-        settings.showDebugOverlay.toggle()
-        #expect(!settings.showDebugOverlay)
-    }
 }

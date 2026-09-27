@@ -10,6 +10,11 @@ import Vision
 import AppKit // Needed for CGImage
 
 class OCRService {
+
+    struct TextSegment {
+        let text: String
+        let bounds: CGRect
+    }
     
     // An enum to represent the possible outcomes.
     enum OCRResult {
@@ -17,99 +22,84 @@ class OCRService {
         case failure(Error)
     }
     
-    // The primary function of the service.
-    // In OCRService.swift
-
     static func performOCR(on image: CGImage, completion: @escaping (OCRResult) -> Void) {
-        
-        guard let processedImage = preprocessImage(image) else {
-            completion(.failure(NSError(domain: "OCRService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Image processing failed."])))
-            return
-        }
-        
-        let requestHandler = VNImageRequestHandler(cgImage: processedImage, options: [:])
-        
-        let request = VNRecognizeTextRequest { (request, error) in
-            if let error = error {
-                debugPrint("OCR Error: \(error.localizedDescription)")
+        let settings = SettingsManager.shared
+        let recognitionLevel: VNRequestTextRecognitionLevel = settings.recognitionLevel == .accurate ? .accurate : .fast
+        let usesLanguageCorrection = settings.usesLanguageCorrection
+        let recognitionLanguages = settings.recognitionLanguages
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let processedImage = preprocessImage(image) else {
+                let error = NSError(domain: "OCRService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Image processing failed."])
                 DispatchQueue.main.async { completion(.failure(error)) }
                 return
             }
-            
-            guard let observations = request.results as? [VNRecognizedTextObservation], !observations.isEmpty else {
-                DispatchQueue.main.async { completion(.success("")) }
-                return
-            }
-            
-            // --- INTELLIGENT STRING BUILDING LOGIC ---
-            
-            var recognizedText = ""
-            var lastY: CGFloat? = nil
-            
-            // Vision observations are not always in logical reading order.
-            // We should sort them from top-to-bottom, then left-to-right.
-            let sortedObservations = observations.sorted {
-                // Primary sort by Y-coordinate (top-to-bottom)
-                // Note: Vision's Y-coordinate is from the bottom-left, so we compare the max Y.
-                // We use a dynamic threshold (50% of the height) to handle different text sizes.
-                let threshold = $0.boundingBox.height * 0.5
-                if abs($0.boundingBox.maxY - $1.boundingBox.maxY) > threshold {
-                    return $0.boundingBox.maxY > $1.boundingBox.maxY
-                }
-                // Secondary sort by X-coordinate (left-to-right) for items on the same line
-                return $0.boundingBox.minX < $1.boundingBox.minX
-            }
-            
-            for observation in sortedObservations {
-                guard let topCandidate = observation.topCandidates(1).first else { continue }
-                
-                let currentY = observation.boundingBox.midY
-                let boxHeight = observation.boundingBox.height
-                
-                if let previousY = lastY {
-                    // Check if the vertical distance is large enough to be a new line.
-                    // We use a comparative threshold relative to the text size.
-                    if abs(currentY - previousY) > (boxHeight * 0.5) {
-                        recognizedText += "\n"
-                    } else {
-                        // It's on the same line, add a space.
-                        recognizedText += " "
-                    }
-                }
-                
-                recognizedText += topCandidate.string
-                lastY = currentY
-            }
-            
-            DispatchQueue.main.async {
-                completion(.success(recognizedText))
-            }
-        }
-        
-        // --- Read configuration from SettingsManager ---
-            
-        // Get the shared instance of our settings.
-        let settings = SettingsManager.shared
-        
-        // Set the recognition level based on the user's setting.
-        request.recognitionLevel = (settings.recognitionLevel == .accurate) ? .accurate : .fast
-        
-        // Set the language correction based on the user's setting.
-        request.usesLanguageCorrection = settings.usesLanguageCorrection
-        
-        // We still specify the language to help the engine.
-        request.recognitionLanguages = settings.recognitionLanguages
-        
-        // --- End of new code ---
-        
-        DispatchQueue.global(qos: .userInitiated).async {
+
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = recognitionLevel
+            request.usesLanguageCorrection = usesLanguageCorrection
+            request.recognitionLanguages = recognitionLanguages
+            let requestHandler = VNImageRequestHandler(cgImage: processedImage, options: [:])
             do {
                 try requestHandler.perform([request])
+                let observations = request.results ?? []
+                let segments = observations.compactMap { observation -> TextSegment? in
+                    guard let candidate = observation.topCandidates(1).first else { return nil }
+                    return TextSegment(text: candidate.string, bounds: observation.boundingBox)
+                }
+                let recognizedText = assembleText(from: segments)
+                DispatchQueue.main.async { completion(.success(recognizedText)) }
             } catch {
                 debugPrint("OCR Request Handler Error: \(error.localizedDescription)")
                 DispatchQueue.main.async { completion(.failure(error)) }
             }
         }
+    }
+
+    static func assembleText(from segments: [TextSegment]) -> String {
+        struct Line {
+            let anchor: CGRect
+            var segments: [TextSegment]
+        }
+
+        let topFirst = segments.sorted {
+            if $0.bounds.maxY != $1.bounds.maxY { return $0.bounds.maxY > $1.bounds.maxY }
+            if $0.bounds.minX != $1.bounds.minX { return $0.bounds.minX < $1.bounds.minX }
+            return $0.text < $1.text
+        }
+        var lines: [Line] = []
+        for segment in topFirst {
+            let matchingLine = lines.indices
+                .filter { index in
+                    let anchor = lines[index].anchor
+                    let overlap = max(0, min(anchor.maxY, segment.bounds.maxY) - max(anchor.minY, segment.bounds.minY))
+                    let smallerHeight = min(anchor.height, segment.bounds.height)
+                    let centerDistance = abs(anchor.midY - segment.bounds.midY)
+                    return overlap >= smallerHeight * 0.5 && centerDistance <= smallerHeight
+                }
+                .min { left, right in
+                    abs(lines[left].anchor.midY - segment.bounds.midY) < abs(lines[right].anchor.midY - segment.bounds.midY)
+                }
+            if let index = matchingLine {
+                lines[index].segments.append(segment)
+            } else {
+                lines.append(Line(anchor: segment.bounds, segments: [segment]))
+            }
+        }
+
+        return lines.sorted {
+            if $0.anchor.maxY != $1.anchor.maxY { return $0.anchor.maxY > $1.anchor.maxY }
+            return $0.anchor.minX < $1.anchor.minX
+        }
+        .map { line in
+            line.segments.sorted {
+                if $0.bounds.minX != $1.bounds.minX { return $0.bounds.minX < $1.bounds.minX }
+                return $0.text < $1.text
+            }
+            .map(\.text)
+            .joined(separator: " ")
+        }
+        .joined(separator: "\n")
     }
     
     private static let ciContext = CIContext(options: nil)

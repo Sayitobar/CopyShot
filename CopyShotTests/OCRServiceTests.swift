@@ -14,6 +14,71 @@ import Vision
 
 @Suite("OCRService Tests")
 struct OCRServiceTests {
+
+    @Test("Mixed-height observations retain top-to-bottom, left-to-right reading order")
+    func testMixedHeightReadingOrder() {
+        let segments: [OCRService.TextSegment] = [
+            .init(text: "Bottom Right", bounds: CGRect(x: 0.45, y: 0.69, width: 0.2, height: 0.05)),
+            .init(text: "Top Right", bounds: CGRect(x: 0.45, y: 0.77, width: 0.2, height: 0.05)),
+            .init(text: "Bottom Left", bounds: CGRect(x: 0.10, y: 0.705, width: 0.2, height: 0.02)),
+            .init(text: "Top Left", bounds: CGRect(x: 0.10, y: 0.785, width: 0.2, height: 0.02))
+        ]
+        #expect(OCRService.assembleText(from: segments) == "Top Left Top Right\nBottom Left Bottom Right")
+    }
+
+    @Test("A tall observation spanning two rows does not merge the rows")
+    func testTallObservationDoesNotMergeLines() {
+        let segments: [OCRService.TextSegment] = [
+            .init(text: "Lower Right", bounds: CGRect(x: 0.50, y: 0.71, width: 0.2, height: 0.05)),
+            .init(text: "Upper Right", bounds: CGRect(x: 0.45, y: 0.80, width: 0.2, height: 0.05)),
+            .init(text: "Tall Upper", bounds: CGRect(x: 0.10, y: 0.70, width: 0.2, height: 0.20)),
+            .init(text: "Lower Left", bounds: CGRect(x: 0.15, y: 0.71, width: 0.2, height: 0.05))
+        ]
+        #expect(OCRService.assembleText(from: segments) == "Tall Upper Upper Right\nLower Left Lower Right")
+    }
+
+    @Test("Observation order does not change assembled text")
+    func observationPermutationDoesNotChangeOutput() {
+        let segments: [OCRService.TextSegment] = [
+            .init(text: "left top", bounds: CGRect(x: 0.05, y: 0.80, width: 0.20, height: 0.04)),
+            .init(text: "right top", bounds: CGRect(x: 0.55, y: 0.81, width: 0.20, height: 0.04)),
+            .init(text: "left bottom", bounds: CGRect(x: 0.05, y: 0.55, width: 0.20, height: 0.04)),
+            .init(text: "right bottom", bounds: CGRect(x: 0.55, y: 0.56, width: 0.20, height: 0.04))
+        ]
+        let expected = "left top right top\nleft bottom right bottom"
+        for ordering in [segments, Array(segments.reversed()), [segments[2], segments[0], segments[3], segments[1]]] {
+            #expect(OCRService.assembleText(from: ordering) == expected)
+        }
+    }
+
+    @Test("Empty input and separated rows do not introduce extra whitespace")
+    func emptyAndSeparatedRows() {
+        #expect(OCRService.assembleText(from: []) == "")
+        let segments: [OCRService.TextSegment] = [
+            .init(text: "first", bounds: CGRect(x: 0.1, y: 0.8, width: 0.1, height: 0.04)),
+            .init(text: "second", bounds: CGRect(x: 0.1, y: 0.4, width: 0.1, height: 0.04))
+        ]
+        #expect(OCRService.assembleText(from: segments) == "first\nsecond")
+    }
+
+    @Test("OCR completion is delivered on the main thread")
+    @MainActor
+    func testOCRCompletionOnMainThread() async throws {
+        guard let image = createBlankImage() else {
+            Issue.record("Failed to create OCR fixture")
+            return
+        }
+
+        _ = try await withCheckedThrowingContinuation { continuation in
+            OCRService.performOCR(on: image) { result in
+                #expect(Thread.isMainThread)
+                switch result {
+                case .success(let text): continuation.resume(returning: text)
+                case .failure(let error): continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
     
     /// Helper to synthesize an in-memory CGImage with black text on a white canvas.
     private func createTextImage(text: String, size: CGSize = CGSize(width: 400, height: 100)) -> CGImage? {
@@ -128,9 +193,9 @@ struct OCRServiceTests {
         }
         
         #expect(!recognized.isEmpty)
-        // Flexible assertion: check that key recognizable tokens appear
         let lowercased = recognized.lowercased()
-        #expect(lowercased.contains("copyshot") || lowercased.contains("fast") || lowercased.contains("ocr"))
+        #expect(lowercased.contains("copyshot"))
+        #expect(lowercased.contains("ocr"))
     }
 
     @Test("OCR handles blank images gracefully without failing")
@@ -175,10 +240,13 @@ struct OCRServiceTests {
             }
         }
         
-        #expect(!recognized.isEmpty)
-        // Check that either newline separator is present or both lines were captured
         let lowercased = recognized.lowercased()
-        #expect(lowercased.contains("first") || lowercased.contains("line"))
-        #expect(lowercased.contains("second") || lowercased.contains("text"))
+        let first = lowercased.range(of: "first")
+        let second = lowercased.range(of: "second")
+        #expect(first != nil)
+        #expect(second != nil)
+        if let first, let second {
+            #expect(first.lowerBound < second.lowerBound)
+        }
     }
 }

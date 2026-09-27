@@ -502,6 +502,7 @@ struct TabButton: View {
             .animation(nil, value: isTransitioning)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("settings-tab-\(tab.rawValue)")
         .onHover { hovered in
             if isTransitioning || isSelected {
                 isHovered = false

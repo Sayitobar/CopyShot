@@ -40,6 +40,27 @@ final class NotificationHostingView<Content: View>: NSHostingView<Content> {
 }
 
 class NotificationPresenter: ObservableObject {
+    static func isPointInVisibleBox(_ point: NSPoint, windowHeight: CGFloat, visibleBoxHeight: CGFloat) -> Bool {
+        let boxHeight = max(visibleBoxHeight, 78)
+        let thresholdY = windowHeight - 14 - boxHeight - 20
+        return point.y >= thresholdY && point.y <= windowHeight + 10
+    }
+
+    private let configProvider: () -> QuickActionsConfig
+    private let dismissScheduler: (TimeInterval, @escaping () -> Void) -> AnyCancellable
+
+    init(
+        configProvider: @escaping () -> QuickActionsConfig = { SettingsManager.shared.quickActionsConfig },
+        dismissScheduler: @escaping (TimeInterval, @escaping () -> Void) -> AnyCancellable = { duration, action in
+        Just(true)
+            .delay(for: .seconds(duration), scheduler: DispatchQueue.main)
+            .sink { _ in action() }
+        }
+    ) {
+        self.configProvider = configProvider
+        self.dismissScheduler = dismissScheduler
+    }
+
     @Published var isShowingNotification: Bool = false
     @Published var notificationTitle: String = ""
     @Published var notificationSubtitle: String? = nil
@@ -58,6 +79,7 @@ class NotificationPresenter: ObservableObject {
     
     private var currentRawText: String? = nil
     private var dismissTimer: AnyCancellable?
+    private var notificationDuration: TimeInterval = 3.0
     private var notificationWindow: NotificationHUDWindow?
     private var shelfWindow: NotificationHUDWindow?
     private var subShelfWindow: NotificationHUDWindow?
@@ -153,16 +175,17 @@ class NotificationPresenter: ObservableObject {
         targetScreen: NSScreen? = nil,
         duration: TimeInterval = 3.0,
         supportsQuickActions: Bool = false,
-        quickActions: [QuickAction] = QuickAction.defaultActions
+        quickActions: [QuickAction]? = nil
     ) {
         // Dismiss any existing notification first
         dismissNotification()
         
-        let config = SettingsManager.shared.quickActionsConfig
+        let config = configProvider()
         self.targetScreen = targetScreen
         self.supportsQuickActions = supportsQuickActions && config.isEnabled
         self.currentRawText = fullBody ?? body
-        self.quickActions = QuickAction.actions(for: self.currentRawText, config: config)
+        self.quickActions = quickActions ?? QuickAction.actions(for: self.currentRawText, config: config)
+        self.notificationDuration = max(0, duration)
         self.isShelfOpen = false
         self.activeSubmenu = nil
         self.hoverGraceTimer?.cancel()
@@ -242,13 +265,10 @@ class NotificationPresenter: ObservableObject {
             guard let self = self, let host = host, let window = host.window ?? self.notificationWindow else {
                 return true
             }
-            let winHeight = window.frame.height
-            let boxHeight = max(self.currentVisibleBoxHeight, 78)
-            let thresholdY = winHeight - 14 - boxHeight - 20
-            
             // In AppKit window coordinates, (0, 0) is bottom-left. The notification is anchored at the top.
-            // Clicks at or above thresholdY are within the visible HUD (including close and expand buttons).
-            return point.y >= thresholdY && point.y <= winHeight + 10
+            return Self.isPointInVisibleBox(
+                point, windowHeight: window.frame.height, visibleBoxHeight: self.currentVisibleBoxHeight
+            )
         }
         hostingView = host
         notificationWindow?.contentView = host
@@ -549,11 +569,9 @@ class NotificationPresenter: ObservableObject {
     
     func startDismissTimer() {
         dismissTimer?.cancel()
-        dismissTimer = Just(true)
-            .delay(for: .seconds(3.0), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.hideNotificationWithAnimation()
-            }
+        dismissTimer = dismissScheduler(notificationDuration) { [weak self] in
+            self?.hideNotificationWithAnimation()
+        }
     }
     
     func cancelDismissTimer() {
@@ -728,7 +746,7 @@ class NotificationPresenter: ObservableObject {
             
             hideNotificationWithAnimation { [weak self] in
                 guard let self = self else { return }
-                let engine = SettingsManager.shared.quickActionsConfig.searchEngine
+                let engine = configProvider().searchEngine
                 let success = WebActionHelper.execute(for: rawText, engine: engine)
                 if !success {
                     FeedbackManager.showNotification(
@@ -759,11 +777,10 @@ class NotificationPresenter: ObservableObject {
                         ClipboardManager.copyToClipboard(text: translation.translatedText)
                         
                         let previewText: String
-                        if SettingsManager.shared.textPreviewLimit > 0 && translation.translatedText.count > SettingsManager.shared.textPreviewLimit {
-                            previewText = String(translation.translatedText.prefix(SettingsManager.shared.textPreviewLimit)) + "..."
-                        } else {
-                            previewText = translation.translatedText
-                        }
+                        previewText = TextPreview.format(
+                            translation.translatedText,
+                            limit: SettingsManager.shared.textPreviewLimit
+                        )
                         
                         FeedbackManager.showNotification(
                             title: "Translated to \(translation.targetLanguageName)",

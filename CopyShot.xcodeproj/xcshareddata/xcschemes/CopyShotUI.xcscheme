@@ -31,13 +31,24 @@
       shouldAutocreateTestPlan = "YES">
       <Testables>
          <TestableReference
-            skipped = "NO"
+            skipped = "YES"
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "0428F2952DFDBDA500CFF1DB"
                BuildableName = "CopyShotTests.xctest"
                BlueprintName = "CopyShotTests"
+               ReferencedContainer = "container:CopyShot.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0428F29F2DFDBDA500CFF1DB"
+               BuildableName = "CopyShotUITests.xctest"
+               BlueprintName = "CopyShotUITests"
                ReferencedContainer = "container:CopyShot.xcodeproj">
             </BuildableReference>
          </TestableReference>

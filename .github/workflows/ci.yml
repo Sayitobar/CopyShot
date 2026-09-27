@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    name: Run Unit & Benchmark Tests
+    name: Run Unit Tests
     runs-on: macos-15
 
     steps:
@@ -29,6 +29,7 @@ jobs:
             -scheme CopyShot \
             -destination "platform=macOS" \
             -only-testing:CopyShotTests \
+            -skip-testing:CopyShotTests/PipelineBenchmarkTests \
             -resultBundlePath TestResults.xcresult
 
       - name: Upload Test Results

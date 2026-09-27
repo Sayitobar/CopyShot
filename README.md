@@ -127,11 +127,13 @@ If you'd like to edit, build, test, and run CopyShot yourself on macOS, here's h
    Hit the **Run** button (play icon) or go to `Product > Run`.
    It should build and launch the app.
 
-4. **Run Unit & Benchmark Tests:**
-   Press `⌘U` in Xcode or run via terminal:
+4. **Run Tests:**
+   Run the fast unit suite via terminal:
    ```bash
-   xcodebuild test -scheme CopyShot -destination 'platform=macOS' -only-testing:CopyShotTests
+   xcodebuild test -scheme CopyShot -destination 'platform=macOS' \
+     -only-testing:CopyShotTests -skip-testing:CopyShotTests/PipelineBenchmarkTests
    ```
+   Benchmarks, the Settings UI smoke test, and a manual capture checklist are in [docs/TESTING.md](docs/TESTING.md).
 
 5. **Grant Permissions:**
    The first time you run CopyShot, macOS security features will prevent it from capturing your screen. You will need to manually grant permission. Here is how to locate `Screen Recording Permissions` manually:

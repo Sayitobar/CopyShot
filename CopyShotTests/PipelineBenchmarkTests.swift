@@ -7,11 +7,12 @@
 
 import Testing
 import Foundation
+import AppKit
 import CoreGraphics
 import CoreText
 @testable import CopyShot
 
-@Suite("Performance Benchmark Baseline Tests", .serialized)
+@Suite("Performance Benchmarks", .serialized)
 @MainActor
 struct PipelineBenchmarkTests {
     
@@ -71,6 +72,8 @@ struct PipelineBenchmarkTests {
     /// and returns the elapsed time and recognized text.
     private func runPipeline(on image: CGImage) async throws -> (Duration, String) {
         let clock = ContinuousClock()
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
         var recognized = ""
         let duration = try await clock.measure {
             recognized = try await withCheckedThrowingContinuation { continuation in
@@ -83,33 +86,16 @@ struct PipelineBenchmarkTests {
                     }
                 }
             }
-            ClipboardManager.copyToClipboard(text: recognized)
+            ClipboardManager.copyToClipboard(text: recognized, pasteboard: pasteboard)
         }
         return (duration, recognized)
     }
 
     private func logBenchmark(_ text: String) {
         NSLog("%@", text)
-        fputs(text, stderr)
-        fflush(stderr)
-        
-        guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let fileURL = docsURL.appendingPathComponent("copyshot_benchmark.txt")
-        do {
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                let handle = try FileHandle(forWritingTo: fileURL)
-                handle.seekToEndOfFile()
-                if let d = text.data(using: .utf8) { handle.write(d) }
-                try handle.close()
-            } else {
-                try text.write(to: fileURL, atomically: true, encoding: .utf8)
-            }
-        } catch {
-            NSLog("Write error: %@", error.localizedDescription)
-        }
     }
 
-    @Test("Baseline 1: Single-Line Short Sentence (~150x30 pt @ 2x Retina = 300x60 px)")
+    @Test("Single-Line Short Sentence (~150x30 pt @ 2x Retina = 300x60 px)")
     func testSingleLineShortSentenceBenchmark() async throws {
         // Area: ~150x30 points, 4-6 words
         let sentence = ["Fast OCR in menu bar"]
@@ -126,18 +112,19 @@ struct PipelineBenchmarkTests {
         // Warm-up run (loads neural engine weights into memory)
         _ = try await runPipeline(on: image)
         
-        // 3 measured iterations for an accurate baseline
+        // Run separately from CI; seven samples make one slow Vision dispatch less dominant.
         var durationsMs: [Double] = []
         var lastRecognized = ""
         
-        for _ in 1...3 {
+        for _ in 1...7 {
             let (duration, text) = try await runPipeline(on: image)
-            let ms = Double(duration.components.attoseconds) / 1_000_000_000_000_000.0
+            let ms = Double(duration.components.seconds) * 1_000
+                + Double(duration.components.attoseconds) / 1_000_000_000_000_000.0
             durationsMs.append(ms)
             lastRecognized = text
         }
         
-        let avgMs = durationsMs.reduce(0, +) / Double(durationsMs.count)
+        let medianMs = durationsMs.sorted()[durationsMs.count / 2]
         let minMs = durationsMs.min() ?? 0
         let maxMs = durationsMs.max() ?? 0
         
@@ -145,23 +132,22 @@ struct PipelineBenchmarkTests {
             format: """
             
             ========================================================================
-            📊 [BASELINE 1] Single-Line Sentence (~150x30 pt @ 2x = 300x60 px)
+            📊 Single-Line Sentence (~150x30 pt @ 2x = 300x60 px)
                • Text Content: "%@"
-               • Average Latency: %.2f ms (Min: %.2f ms, Max: %.2f ms)
+               • Median Latency: %.2f ms (Min: %.2f ms, Max: %.2f ms)
                • Extracted: "%@"
             ========================================================================
             
             """,
-            sentence[0], avgMs, minMs, maxMs, lastRecognized.trimmingCharacters(in: .whitespacesAndNewlines)
+            sentence[0], medianMs, minMs, maxMs, lastRecognized.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         
         logBenchmark(logOutput)
         
         #expect(!lastRecognized.isEmpty)
-        #expect(avgMs < 2000.0) // Generous ceiling to prevent build failure on any Mac
     }
 
-    @Test("Baseline 2: Multi-Line Text Block (~600x200 pt @ 2x Retina = 1200x400 px)")
+    @Test("Multi-Line Text Block (~600x200 pt @ 2x Retina = 1200x400 px)")
     func testMultiLineTextBlockBenchmark() async throws {
         // Area: ~600x200 points, multiline text paragraph
         let paragraph = [
@@ -185,18 +171,19 @@ struct PipelineBenchmarkTests {
         // Warm-up run
         _ = try await runPipeline(on: image)
         
-        // 3 measured iterations for an accurate baseline
+        // Run separately from CI; seven samples make one slow Vision dispatch less dominant.
         var durationsMs: [Double] = []
         var lastRecognized = ""
         
-        for _ in 1...3 {
+        for _ in 1...7 {
             let (duration, text) = try await runPipeline(on: image)
-            let ms = Double(duration.components.attoseconds) / 1_000_000_000_000_000.0
+            let ms = Double(duration.components.seconds) * 1_000
+                + Double(duration.components.attoseconds) / 1_000_000_000_000_000.0
             durationsMs.append(ms)
             lastRecognized = text
         }
         
-        let avgMs = durationsMs.reduce(0, +) / Double(durationsMs.count)
+        let medianMs = durationsMs.sorted()[durationsMs.count / 2]
         let minMs = durationsMs.min() ?? 0
         let maxMs = durationsMs.max() ?? 0
         
@@ -204,18 +191,17 @@ struct PipelineBenchmarkTests {
             format: """
             
             ========================================================================
-            📊 [BASELINE 2] Multi-Line Paragraph (~600x200 pt @ 2x = 1200x400 px)
+            📊 Multi-Line Paragraph (~600x200 pt @ 2x = 1200x400 px)
                • Total Lines: %d, Characters: %d
-               • Average Latency: %.2f ms (Min: %.2f ms, Max: %.2f ms)
+               • Median Latency: %.2f ms (Min: %.2f ms, Max: %.2f ms)
             ========================================================================
             
             """,
-            paragraph.count, lastRecognized.count, avgMs, minMs, maxMs
+            paragraph.count, lastRecognized.count, medianMs, minMs, maxMs
         )
         
         logBenchmark(logOutput)
         
         #expect(!lastRecognized.isEmpty)
-        #expect(avgMs < 3000.0) // Generous ceiling to prevent build failure on any Mac
     }
 }

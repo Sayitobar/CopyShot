@@ -77,23 +77,24 @@ struct HotkeyConfig: Codable, Equatable {
 class SettingsManager: ObservableObject {
     // Singleton pattern to access settings from anywhere.
     static let shared = SettingsManager()
+    private let defaults: UserDefaults
     
     // @Published properties will automatically update any SwiftUI views that use them.
     @Published var recognitionLevel: RecognitionLevel {
         didSet {
-            UserDefaults.standard.set(recognitionLevel.rawValue, forKey: SettingsKeys.recognitionLevel)
+            defaults.set(recognitionLevel.rawValue, forKey: SettingsKeys.recognitionLevel)
         }
     }
     
     @Published var usesLanguageCorrection: Bool {
         didSet {
-            UserDefaults.standard.set(usesLanguageCorrection, forKey: SettingsKeys.usesLanguageCorrection)
+            defaults.set(usesLanguageCorrection, forKey: SettingsKeys.usesLanguageCorrection)
         }
     }
     
     @Published var recognitionLanguages: [String] {
         didSet {
-            UserDefaults.standard.set(recognitionLanguages, forKey: SettingsKeys.recognitionLanguages)
+            defaults.set(recognitionLanguages, forKey: SettingsKeys.recognitionLanguages)
         }
     }
     
@@ -105,19 +106,19 @@ class SettingsManager: ObservableObject {
     
     @Published var textPreviewLimit: Int {
         didSet {
-            UserDefaults.standard.set(textPreviewLimit, forKey: SettingsKeys.textPreviewLimit)
+            defaults.set(textPreviewLimit, forKey: SettingsKeys.textPreviewLimit)
         }
     }
     
     @Published var appearance: AppAppearance {
         didSet {
-            UserDefaults.standard.set(appearance.rawValue, forKey: SettingsKeys.appAppearance)
+            defaults.set(appearance.rawValue, forKey: SettingsKeys.appAppearance)
         }
     }
     
     @Published var playNotificationSound: Bool {
         didSet {
-            UserDefaults.standard.set(playNotificationSound, forKey: SettingsKeys.playNotificationSound)
+            defaults.set(playNotificationSound, forKey: SettingsKeys.playNotificationSound)
         }
     }
     
@@ -150,18 +151,19 @@ class SettingsManager: ObservableObject {
     @Published var quickActionsConfig: QuickActionsConfig {
         didSet {
             if let data = try? JSONEncoder().encode(quickActionsConfig) {
-                UserDefaults.standard.set(data, forKey: SettingsKeys.quickActionsConfig)
+                defaults.set(data, forKey: SettingsKeys.quickActionsConfig)
             }
         }
     }
     
-    private init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         // MARK: - Initial Settings Check & Assignment
         // Here we assign the default values for the first time the app is launched.
         // If a setting does not exist in UserDefaults (is nil), we provide the fallback default.
         
         // Quick Actions Configuration (Default: QuickActionsConfig())
-        if let data = UserDefaults.standard.data(forKey: SettingsKeys.quickActionsConfig),
+        if let data = defaults.data(forKey: SettingsKeys.quickActionsConfig),
            let decoded = try? JSONDecoder().decode(QuickActionsConfig.self, from: data) {
             self.quickActionsConfig = decoded
         } else {
@@ -169,46 +171,45 @@ class SettingsManager: ObservableObject {
         }
         
         // Recognition Level (Default: Accurate)
-        if UserDefaults.standard.object(forKey: SettingsKeys.recognitionLevel) == nil {
+        if defaults.object(forKey: SettingsKeys.recognitionLevel) == nil {
             self.recognitionLevel = .accurate
         } else {
-            let savedLevel = UserDefaults.standard.integer(forKey: SettingsKeys.recognitionLevel)
+            let savedLevel = defaults.integer(forKey: SettingsKeys.recognitionLevel)
             self.recognitionLevel = RecognitionLevel(rawValue: savedLevel) ?? .accurate
         }
         
         // Language Correction (Default: True)
-        if UserDefaults.standard.object(forKey: SettingsKeys.usesLanguageCorrection) == nil {
+        if defaults.object(forKey: SettingsKeys.usesLanguageCorrection) == nil {
             self.usesLanguageCorrection = true
         } else {
-            self.usesLanguageCorrection = UserDefaults.standard.bool(forKey: SettingsKeys.usesLanguageCorrection)
+            self.usesLanguageCorrection = defaults.bool(forKey: SettingsKeys.usesLanguageCorrection)
         }
         
         // Languages (Default: English)
-        self.recognitionLanguages = UserDefaults.standard.stringArray(forKey: SettingsKeys.recognitionLanguages) ?? ["en-US"]
+        self.recognitionLanguages = defaults.stringArray(forKey: SettingsKeys.recognitionLanguages) ?? ["en-US"]
         
         // Hotkeys (Default: ⌘⇧C)
         self.captureHotkey = HotkeyConfig.defaultCapture
-        if let savedCaptureHotkey = Self.loadHotkey(forKey: SettingsKeys.captureHotkey) {
+        if let savedCaptureHotkey = Self.loadHotkey(forKey: SettingsKeys.captureHotkey, defaults: defaults) {
             self.captureHotkey = savedCaptureHotkey
         }
         
         // Text Preview Limit (Default: 50)
-        let limit = UserDefaults.standard.integer(forKey: SettingsKeys.textPreviewLimit)
-        self.textPreviewLimit = limit == 0 ? 50 : limit
+        self.textPreviewLimit = Self.previewLimit(from: defaults)
         
         // App Appearance (Default: System)
-        if UserDefaults.standard.object(forKey: SettingsKeys.appAppearance) == nil {
+        if defaults.object(forKey: SettingsKeys.appAppearance) == nil {
             self.appearance = .system
         } else {
-            let savedAppearance = UserDefaults.standard.string(forKey: SettingsKeys.appAppearance) ?? AppAppearance.system.rawValue
+            let savedAppearance = defaults.string(forKey: SettingsKeys.appAppearance) ?? AppAppearance.system.rawValue
             self.appearance = AppAppearance(rawValue: savedAppearance) ?? .system
         }
         
         // Notification Sound
-        if UserDefaults.standard.object(forKey: SettingsKeys.playNotificationSound) == nil {
+        if defaults.object(forKey: SettingsKeys.playNotificationSound) == nil {
             self.playNotificationSound = true
         } else {
-            self.playNotificationSound = UserDefaults.standard.bool(forKey: SettingsKeys.playNotificationSound)
+            self.playNotificationSound = defaults.bool(forKey: SettingsKeys.playNotificationSound)
         }
         
         // Launch at Login (Default: False)
@@ -218,6 +219,11 @@ class SettingsManager: ObservableObject {
         } else {
             self.launchAtLogin = false
         }
+    }
+
+    static func previewLimit(from defaults: UserDefaults) -> Int {
+        guard defaults.object(forKey: SettingsKeys.textPreviewLimit) != nil else { return 50 }
+        return max(0, defaults.integer(forKey: SettingsKeys.textPreviewLimit))
     }
     
     // Helper property to get available languages from Vision
@@ -234,12 +240,12 @@ class SettingsManager: ObservableObject {
     
     private func saveHotkey(_ hotkey: HotkeyConfig, forKey key: String) {
         if let encoded = try? JSONEncoder().encode(hotkey) {
-            UserDefaults.standard.set(encoded, forKey: key)
+            defaults.set(encoded, forKey: key)
         }
     }
     
-    private static func loadHotkey(forKey key: String) -> HotkeyConfig? {
-        guard let data = UserDefaults.standard.data(forKey: key),
+    private static func loadHotkey(forKey key: String, defaults: UserDefaults) -> HotkeyConfig? {
+        guard let data = defaults.data(forKey: key),
               let hotkey = try? JSONDecoder().decode(HotkeyConfig.self, from: data) else {
             return nil
         }

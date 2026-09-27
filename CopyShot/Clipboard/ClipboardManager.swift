@@ -10,9 +10,7 @@ import AppKit
 class ClipboardManager {
     
     // A simple, static function to copy text.
-    static func copyToClipboard(text: String) {
-        // Get a reference to the general pasteboard.
-        let pasteboard = NSPasteboard.general
+    static func copyToClipboard(text: String, pasteboard: NSPasteboard = .general) {
         
         // Clear any previous contents.
         pasteboard.clearContents()

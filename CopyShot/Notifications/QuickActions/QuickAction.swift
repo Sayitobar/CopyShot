@@ -252,23 +252,24 @@ enum SearchEngine: String, CaseIterable, Identifiable, Codable {
     
     func searchURL(for query: String) -> URL? {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return nil
-        }
+        let baseURL: String
         switch self {
         case .google:
-            return URL(string: "https://www.google.com/search?q=\(encoded)")
+            baseURL = "https://www.google.com/search"
         case .duckDuckGo:
-            return URL(string: "https://duckduckgo.com/?q=\(encoded)")
+            baseURL = "https://duckduckgo.com/"
         case .bing:
-            return URL(string: "https://www.bing.com/search?q=\(encoded)")
+            baseURL = "https://www.bing.com/search"
         case .kagi:
-            return URL(string: "https://kagi.com/search?q=\(encoded)")
+            baseURL = "https://kagi.com/search"
         case .brave:
-            return URL(string: "https://search.brave.com/search?q=\(encoded)")
+            baseURL = "https://search.brave.com/search"
         case .ecosia:
-            return URL(string: "https://www.ecosia.org/search?q=\(encoded)")
+            baseURL = "https://www.ecosia.org/search"
         }
+        guard var components = URLComponents(string: baseURL) else { return nil }
+        components.queryItems = [URLQueryItem(name: "q", value: trimmed)]
+        return components.url
     }
 }
 

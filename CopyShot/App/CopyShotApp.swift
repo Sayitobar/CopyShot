@@ -16,6 +16,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     // The manager is now created on the main actor, which is safe.
     private let captureManager = ScreenCaptureManager()
+
+    private lazy var capturePipeline = CapturePipeline(
+        isLatest: { [weak self] requestID in
+            self?.captureManager.isLatestCapture(requestID) ?? false
+        },
+        recognize: { image, completion in
+            OCRService.performOCR(on: image) { result in
+                Task { @MainActor in completion(result) }
+            }
+        },
+        deliver: { [weak self] outcome, screen in
+            self?.presentCaptureOutcome(outcome, screen: screen)
+        }
+    )
     
     @Published var menuBarIconState: MenuBarIconState = .idle
     
@@ -25,81 +39,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 1. Set up the completion handler ONCE.
         // This is now safe because both the AppDelegate and the captureManager
         // are on the Main Actor.
-        captureManager.onCaptureComplete = { image, screen in
-            debugPrint("--- AppDelegate: onCaptureComplete closure EXECUTED. ---")
-            
-            guard let capturedImage = image else {
-                debugPrint("Capture was cancelled or failed.")
-                FeedbackManager.showNotification(
-                    title: "Capture Cancelled",
-                    body: "The screen capture was cancelled or failed.",
-                    iconName: "xmark.circle.fill",
-                    accentColor: .adaptiveRed,
-                    soundName: "Frog", // Custom sound for cancellation
-                    targetScreen: screen
-                )
-                self.resetIcon()
-                return
-            }
-            
-            debugPrint("Image captured successfully. Performing OCR...")
-            
-            // The OCR service runs on a background thread internally,
-            // so this call does not block the main thread.
-            OCRService.performOCR(on: capturedImage) { result in
-                #if DEBUG
-                CaptureBenchmarkTracker.shared.recordOCRCompleted()
-                #endif
-                switch result {
-                case .success(let recognizedText):
-                    if recognizedText.isEmpty {
-                        debugPrint("OCR completed, but no text was found.")
-                        FeedbackManager.showNotification(
-                            title: "No Text Found",
-                            body: "The selected area did not contain any recognizable text.",
-                            iconName: "questionmark.circle.fill",
-                            accentColor: .adaptiveBlue,
-                            soundName: "Bottle", // Custom sound for no text found
-                            targetScreen: screen
-                        )
-                        self.resetIcon()
-                    } else {
-                        debugPrint("Successfully recognized text. Copying to clipboard.")
-                        ClipboardManager.copyToClipboard(text: recognizedText)
-                        
-                        let previewText: String
-                        if SettingsManager.shared.textPreviewLimit > 0 && recognizedText.count > SettingsManager.shared.textPreviewLimit {
-                            previewText = String(recognizedText.prefix(SettingsManager.shared.textPreviewLimit)) + "..."
-                        } else {
-                            previewText = recognizedText
-                        }
-                        
-                        FeedbackManager.showNotification(
-                            title: "Text Copied",
-                            subtitle: "Recognized text:",
-                            body: previewText,
-                            fullBody: recognizedText,
-                            iconName: "checkmark.circle.fill",
-                            accentColor: .adaptiveGreen,
-                            soundName: "Funk",
-                            targetScreen: screen,
-                            supportsQuickActions: SettingsManager.shared.quickActionsConfig.isEnabled
-                        )
-                        self.setSuccessIcon()
-                    }
-                case .failure(let error):
-                    debugPrint("OCR failed with error: \(error.localizedDescription)")
-                    FeedbackManager.showNotification(
-                        title: "OCR Failed",
-                        body: error.localizedDescription,
-                        iconName: "exclamationmark.triangle.fill",
-                        accentColor: .adaptiveOrange,
-                        soundName: "Sosumi", // Custom sound for OCR failure
-                        targetScreen: screen
-                    )
-                    self.resetIcon()
-                }
-            }
+        captureManager.onCaptureComplete = { [weak self] image, screen, requestID in
+            self?.capturePipeline.completeCapture(image: image, screen: screen, requestID: requestID)
         }
         
         // 2. Register and listen for hotkeys.
@@ -115,6 +56,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         
         // 3. Pre-warm ScreenCaptureKit in background to eliminate cold-start daemon delay
         captureManager.prewarm()
+
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-show-settings") {
+            DispatchQueue.main.async {
+                SettingsWindowManager.shared.showSettings()
+            }
+        }
         
         debugPrint("--- Setup complete. Waiting for hotkeys. ---")
     }
@@ -125,6 +72,64 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         debugPrint("--- Capture hotkey fired! Starting capture... ---")
         menuBarIconState = .capturing
         captureManager.startCapture()
+    }
+
+    private func presentCaptureOutcome(_ outcome: CapturePipeline.Outcome, screen: NSScreen?) {
+        switch outcome {
+        case .cancelled:
+            FeedbackManager.showNotification(
+                title: "Capture Cancelled",
+                body: "The screen capture was cancelled or failed.",
+                iconName: "xmark.circle.fill",
+                accentColor: .adaptiveRed,
+                soundName: "Frog",
+                targetScreen: screen
+            )
+            resetIcon()
+        case .noText:
+            #if DEBUG
+            CaptureBenchmarkTracker.shared.recordOCRCompleted()
+            #endif
+            FeedbackManager.showNotification(
+                title: "No Text Found",
+                body: "The selected area did not contain any recognizable text.",
+                iconName: "questionmark.circle.fill",
+                accentColor: .adaptiveBlue,
+                soundName: "Bottle",
+                targetScreen: screen
+            )
+            resetIcon()
+        case .text(let recognizedText):
+            #if DEBUG
+            CaptureBenchmarkTracker.shared.recordOCRCompleted()
+            #endif
+            ClipboardManager.copyToClipboard(text: recognizedText)
+            FeedbackManager.showNotification(
+                title: "Text Copied",
+                subtitle: "Recognized text:",
+                body: TextPreview.format(recognizedText, limit: SettingsManager.shared.textPreviewLimit),
+                fullBody: recognizedText,
+                iconName: "checkmark.circle.fill",
+                accentColor: .adaptiveGreen,
+                soundName: "Funk",
+                targetScreen: screen,
+                supportsQuickActions: SettingsManager.shared.quickActionsConfig.isEnabled
+            )
+            setSuccessIcon()
+        case .failed(let error):
+            #if DEBUG
+            CaptureBenchmarkTracker.shared.recordOCRCompleted()
+            #endif
+            FeedbackManager.showNotification(
+                title: "OCR Failed",
+                body: error.localizedDescription,
+                iconName: "exclamationmark.triangle.fill",
+                accentColor: .adaptiveOrange,
+                soundName: "Sosumi",
+                targetScreen: screen
+            )
+            resetIcon()
+        }
     }
     
     private func setSuccessIcon() {

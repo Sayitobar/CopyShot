@@ -339,6 +339,16 @@ final class QuickActionsTests: XCTestCase {
         let ecosiaURL = SearchEngine.ecosia.searchURL(for: query)
         XCTAssertEqual(ecosiaURL?.absoluteString, "https://www.ecosia.org/search?q=hello%20world")
     }
+
+    func testSearchQueryKeepsReservedCharactersInOneValue() {
+        for engine in SearchEngine.allCases {
+            let url = try? XCTUnwrap(engine.searchURL(for: "red & blue #="))
+            let components = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
+            XCTAssertEqual(components?.queryItems?.count, 1, "\(engine) must keep punctuation inside q")
+            XCTAssertEqual(components?.queryItems?.first?.name, "q")
+            XCTAssertEqual(components?.queryItems?.first?.value, "red & blue #=")
+        }
+    }
     
     func testDefaultTranslateLanguageConfig() {
         if #available(macOS 15.0, *) {
@@ -358,9 +368,10 @@ final class QuickActionsTests: XCTestCase {
     }
     
     func testResetQuickActionsToDefaults() {
-        let settings = SettingsManager.shared
-        let original = settings.quickActionsConfig
-        defer { settings.quickActionsConfig = original }
+        let suite = "CopyShotTests.quickActions.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsManager(defaults: defaults)
         
         settings.quickActionsConfig.isEnabled = false
         settings.quickActionsConfig.searchEngine = .kagi
@@ -374,4 +385,3 @@ final class QuickActionsTests: XCTestCase {
         XCTAssertEqual(settings.quickActionsConfig.actionOrder, ["change_case", "join_lines", "search_web", "translate"])
     }
 }
-
