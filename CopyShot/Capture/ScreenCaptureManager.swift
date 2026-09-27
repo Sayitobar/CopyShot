@@ -82,6 +82,10 @@ class ScreenCaptureManager: NSObject {
         Task { await showOverlay(for: requestID) }
     }
     
+    // MARK: - Animation & Transition Metrics
+    private static let overlayFadeInDuration: TimeInterval = 0.2
+    private static let overlayFadeInTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+
     private func showOverlay(for requestID: UUID) async {
         guard requestState.isCurrent(requestID), overlayWindows.isEmpty else { return }
         do {
@@ -123,6 +127,8 @@ class ScreenCaptureManager: NSObject {
             window.sharingType = .none // Excludes overlay from ScreenCaptureKit recordings
             window.contentView = ActionHostingView(rootView: captureView)
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+            window.acceptsMouseMovedEvents = true
+            window.alphaValue = 0.0 // Start at 0 for fade in
             window.onEscape = { [weak self] in Task { @MainActor in self?.cancelCapture(for: requestID) } }
             overlayWindows.append(window)
         }
@@ -131,11 +137,18 @@ class ScreenCaptureManager: NSObject {
         overlayWindows.forEach { $0.makeKeyAndOrderFront(nil) }
         overlayWindows.first?.makeKey()
         NSCursor.hide()
+        
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Self.overlayFadeInDuration
+            context.timingFunction = Self.overlayFadeInTimingFunction
+            self.overlayWindows.forEach { $0.animator().alphaValue = 1.0 }
+        }, completionHandler: nil)
     }
 
     private func closeOverlay() {
-        overlayWindows.forEach { $0.orderOut(nil) }
-        overlayWindows.removeAll()
+        let windowsToClose = self.overlayWindows
+        self.overlayWindows = []
+        windowsToClose.forEach { $0.orderOut(nil) }
         NSCursor.unhide()
         
         // Restore the previously active application to prevent greyed-out windows

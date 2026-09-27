@@ -384,4 +384,41 @@ final class QuickActionsTests: XCTestCase {
         XCTAssertTrue(settings.quickActionsConfig.showNumericShortcuts)
         XCTAssertEqual(settings.quickActionsConfig.actionOrder, ["change_case", "join_lines", "search_web", "translate"])
     }
+    
+    @MainActor
+    func testTranslationServiceEmptyTextFailsImmediately() {
+        let expectation = expectation(description: "Empty translation returns error")
+        TranslationService.shared.translate(text: "   ", targetLanguageCode: "es") { result in
+            switch result {
+            case .success:
+                XCTFail("Expected failure for whitespace-only text")
+            case .failure(let error as NSError):
+                XCTAssertEqual(error.domain, "CopyShot.Translation")
+                XCTAssertEqual(error.code, -5)
+                expectation.fulfill()
+            }
+        }
+        waitForExpectations(timeout: 2.0)
+    }
+    
+    func testSubShelfViewCreationWithMainShelfHovered() {
+        let subActions = [
+            QuickAction(id: "sub_1", title: "Sub 1", icon: .typography("S1"), shortcutNumber: 1, transform: { $0 })
+        ]
+        let view = ActionSubShelfView(
+            subActions: subActions,
+            accentColor: .blue,
+            isMainShelfHovered: true,
+            onActionSelected: { _ in }
+        )
+        XCTAssertTrue(view.isMainShelfHovered)
+        
+        let viewNotHovered = ActionSubShelfView(
+            subActions: subActions,
+            accentColor: .blue,
+            isMainShelfHovered: false,
+            onActionSelected: { _ in }
+        )
+        XCTAssertFalse(viewNotHovered.isMainShelfHovered)
+    }
 }

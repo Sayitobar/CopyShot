@@ -28,6 +28,14 @@ struct ActionShelfView: View {
     static let pillWidth: CGFloat = 216
     static let columnGap: CGFloat = 8
     
+    // Theme & Animation Configuration
+    struct Theme {
+        static let dimmedOpacity: Double = 0.38
+        static let activeOpacity: Double = 1.0
+        static let dimAnimationDuration: TimeInterval = 0.2
+        static let dimAnimation: Animation = .easeInOut(duration: dimAnimationDuration)
+    }
+    
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             // Main Shelf column (stationary, locked to trailing edge)
@@ -52,8 +60,8 @@ struct ActionShelfView: View {
                             onMainPillHover?(action, hovering)
                         }
                     )
-                    .opacity(isDimmed ? 0.38 : 1.0)
-                    .animation(.easeInOut(duration: 0.2), value: isDimmed)
+                    .opacity(isDimmed ? Theme.dimmedOpacity : Theme.activeOpacity)
+                    .animation(Theme.dimAnimation, value: isDimmed)
                 }
             }
             .frame(width: Self.pillWidth)
@@ -87,6 +95,7 @@ struct ActionShelfView: View {
 struct ActionSubShelfView: View {
     let subActions: [QuickAction]
     let accentColor: Color
+    var isMainShelfHovered: Bool = false
     let onActionSelected: (QuickAction) -> Void
     var onHoverChange: ((Bool) -> Void)? = nil
     
@@ -116,6 +125,8 @@ struct ActionSubShelfView: View {
                             }
                         }
                     )
+                    .opacity(isMainShelfHovered ? ActionShelfView.Theme.dimmedOpacity : ActionShelfView.Theme.activeOpacity)
+                    .animation(ActionShelfView.Theme.dimAnimation, value: isMainShelfHovered)
                 }
             }
             .frame(width: Self.pillWidth)

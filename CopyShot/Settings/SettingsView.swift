@@ -107,9 +107,27 @@ struct LiveContentHeightKey: PreferenceKey {
 final class SettingsWindowManager: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowManager()
     
+    // MARK: - Metrics & Animation Configuration
+    static let windowWidth: CGFloat = 540
+    static let initialEstimatedHeight: CGFloat = 500
+    static let initialPositionXRatio: CGFloat = 0.5 // x: 1/2 (horizontally centered)
+    static let initialPositionYRatio: CGFloat = 3.0 / 4.0 // y: 1/4 (upper section from top, so 3/4 from bottom)
+    static let fallbackLayoutDelay: TimeInterval = 0.15
+    static let resizeAnimationDuration: TimeInterval = 0.35
+    static let resizeTimingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1.0)
+    
     private var window: NSWindow?
     private var updaterViewModel: UpdaterViewModel?
     private var localKeyMonitor: Any?
+    private var targetScreen: NSScreen?
+    private var hasPositionedSettingsWindow = false
+    
+    private func calculateInitialOrigin(for windowSize: CGSize, on screen: NSScreen) -> NSPoint {
+        let screenRect = screen.visibleFrame
+        let x = screenRect.origin.x + (screenRect.width - windowSize.width) * Self.initialPositionXRatio
+        let y = screenRect.origin.y + (screenRect.height - windowSize.height) * Self.initialPositionYRatio
+        return NSPoint(x: x, y: y)
+    }
     
     func showSettings(updaterViewModel: UpdaterViewModel? = nil) {
         if let updater = updaterViewModel {
@@ -118,16 +136,14 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         
         let mouseLocation = NSEvent.mouseLocation
         let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first
+        self.targetScreen = targetScreen
         
         if let existingWindow = self.window {
             if let screen = targetScreen {
                 let currentScreen = existingWindow.screen
                 if currentScreen != screen || !existingWindow.isVisible {
-                    let screenRect = screen.visibleFrame
-                    let windowRect = existingWindow.frame
-                    let x = screenRect.origin.x + (screenRect.width - windowRect.width) / 2
-                    let y = screenRect.origin.y + (screenRect.height - windowRect.height) / 2
-                    existingWindow.setFrameOrigin(NSPoint(x: x, y: y))
+                    let origin = calculateInitialOrigin(for: existingWindow.frame.size, on: screen)
+                    existingWindow.setFrameOrigin(origin)
                 }
             }
             updateAppearance()
@@ -141,6 +157,9 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
     }
     
     private func createAndShowWindow(on targetScreen: NSScreen?) {
+        hasPositionedSettingsWindow = false
+        self.targetScreen = targetScreen
+        
         let settingsView = SettingsView()
             .environmentObject(SettingsManager.shared)
             .environmentObject(updaterViewModel ?? UpdaterViewModel())
@@ -148,7 +167,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: settingsView)
         
         let newWindow = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 260),
+            contentRect: NSRect(x: 0, y: 0, width: Self.windowWidth, height: Self.initialEstimatedHeight),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -164,6 +183,7 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         newWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
         newWindow.standardWindowButton(.zoomButton)?.isHidden = true
         newWindow.isReleasedWhenClosed = false
+        newWindow.alphaValue = 0.0
         if #available(macOS 11.0, *) {
             newWindow.titlebarSeparatorStyle = .none
         }
@@ -175,18 +195,17 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         updateAppearance()
         setupKeyMonitorIfNeeded()
         
-        if let screen = targetScreen {
-            let screenRect = screen.visibleFrame
-            let windowRect = newWindow.frame
-            let x = screenRect.origin.x + (screenRect.width - windowRect.width) / 2
-            let y = screenRect.origin.y + (screenRect.height - windowRect.height) / 2
-            newWindow.setFrameOrigin(NSPoint(x: x, y: y))
-        } else {
-            newWindow.center()
+        // Fallback: If SwiftUI preferences take longer than expected, reveal and position using current size
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.fallbackLayoutDelay) { [weak self] in
+            guard let self = self, let window = self.window, !self.hasPositionedSettingsWindow else { return }
+            self.hasPositionedSettingsWindow = true
+            let screen = self.targetScreen ?? window.screen ?? NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
+            let origin = self.calculateInitialOrigin(for: window.frame.size, on: screen)
+            window.setFrameOrigin(origin)
+            window.alphaValue = 1.0
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
         }
-        
-        NSApp.activate(ignoringOtherApps: true)
-        newWindow.makeKeyAndOrderFront(nil)
     }
     
     func closeSettings() {
@@ -242,9 +261,21 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         guard let window = self.window else { return }
         let currentFrame = window.frame
         
-        let screen = window.screen ?? NSScreen.main
-        let maxScreenHeight = max((screen?.visibleFrame.height ?? 800) - 80, 300)
+        let screen = self.targetScreen ?? window.screen ?? NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
+        let screenRect = screen.visibleFrame
+        let maxScreenHeight = max(screenRect.height - 80, 300)
         let targetHeight = min(newHeight, maxScreenHeight)
+        
+        if !hasPositionedSettingsWindow {
+            hasPositionedSettingsWindow = true
+            let origin = calculateInitialOrigin(for: CGSize(width: currentFrame.width, height: targetHeight), on: screen)
+            let newFrame = NSRect(origin: origin, size: CGSize(width: currentFrame.width, height: targetHeight))
+            window.setFrame(newFrame, display: true)
+            window.alphaValue = 1.0
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
         
         if abs(currentFrame.height - targetHeight) < 1 { return }
         
@@ -258,9 +289,9 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         }
         
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.35
+            context.duration = Self.resizeAnimationDuration
             context.allowsImplicitAnimation = true
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1.0)
+            context.timingFunction = Self.resizeTimingFunction
             window.animator().setFrame(newFrame, display: true)
         }
     }

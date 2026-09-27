@@ -89,7 +89,7 @@ class NotificationPresenter: ObservableObject {
     private var keyEventMonitor: Any?
     
     private var isHoveringNotification: Bool = false
-    private var isHoveringShelf: Bool = false
+    @Published var isHoveringShelf: Bool = false
     private var currentHoveredAction: QuickAction?
     private var hoverOutWorkItem: DispatchWorkItem?
     private var hoverGraceTimer: DispatchWorkItem?
@@ -389,21 +389,11 @@ class NotificationPresenter: ObservableObject {
             subShelfWindow?.setFrame(subFrame, display: true)
         }
         
-        let subView = ActionSubShelfView(
-            subActions: subActions,
-            accentColor: notificationAccentColor,
-            onActionSelected: { [weak self] selectedAction in
-                self?.triggerQuickAction(selectedAction)
-            },
-            onHoverChange: { [weak self] hovering in
-                self?.handleSubShelfHover(hovering)
-            }
-        ).preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
-        
+        let container = ActionSubShelfContainerView(presenter: self, subActions: subActions)
         if let host = subShelfHostingView {
-            host.rootView = AnyView(subView)
+            host.rootView = AnyView(container)
         } else {
-            let host = NotificationHostingView(rootView: AnyView(subView))
+            let host = NotificationHostingView(rootView: AnyView(container))
             subShelfHostingView = host
             subShelfWindow?.contentView = host
         }
@@ -665,7 +655,8 @@ class NotificationPresenter: ObservableObject {
             let isOverNotif = self.visibleNotificationBoxFrame?.contains(mouseLoc) ?? false
             
             let isOverAnyShelf = isOverMainShelf || isOverSubShelf
-            self.isHoveringShelf = isOverAnyShelf
+            self.isHoveringShelf = isOverMainShelf
+            self.isHoveringSubShelf = isOverSubShelf
             self.isHoveringNotification = isOverNotif
             
             // If the cursor is on desktop (neither shelf nor visible notification is hovered):
@@ -694,7 +685,7 @@ class NotificationPresenter: ObservableObject {
         notificationWindow?.makeKey()
         
         keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self, (self.isHoveringNotification || self.isHoveringShelf), self.supportsQuickActions else {
+            guard let self = self, (self.isHoveringNotification || self.isHoveringShelf || self.isHoveringSubShelf), self.supportsQuickActions else {
                 return event
             }
             
@@ -795,9 +786,10 @@ class NotificationPresenter: ObservableObject {
                         )
                         
                     case .failure(let error):
+                        let targetName = TranslationService.localizedLanguageName(for: targetLang)
                         FeedbackManager.showNotification(
                             title: "Translation Failed",
-                            subtitle: "Ensure language set is downloaded from Apple",
+                            subtitle: "Could not translate to \(targetName)",
                             body: error.localizedDescription,
                             iconName: "exclamationmark.triangle.fill",
                             accentColor: .orange,
@@ -867,6 +859,26 @@ private struct ActionShelfContainerView: View {
             },
             onHoverChange: { [weak presenter] hovering in
                 presenter?.handleShelfHover(hovering)
+            }
+        )
+        .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
+    }
+}
+
+private struct ActionSubShelfContainerView: View {
+    @ObservedObject var presenter: NotificationPresenter
+    let subActions: [QuickAction]
+    
+    var body: some View {
+        ActionSubShelfView(
+            subActions: subActions,
+            accentColor: presenter.notificationAccentColor,
+            isMainShelfHovered: presenter.isHoveringShelf,
+            onActionSelected: { [weak presenter] selectedAction in
+                presenter?.triggerQuickAction(selectedAction)
+            },
+            onHoverChange: { [weak presenter] hovering in
+                presenter?.handleSubShelfHover(hovering)
             }
         )
         .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)

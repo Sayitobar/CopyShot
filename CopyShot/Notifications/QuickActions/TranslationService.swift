@@ -38,6 +38,7 @@ private final class TranslationSessionHost: ObservableObject {
     @Published var currentConfiguration: TranslationSession.Configuration?
     private var pendingRequest: PendingTranslationRequest?
     private var hostWindow: NSWindow?
+    private var timeoutTimer: Timer?
     
     struct HostView: View {
         @ObservedObject var host: TranslationSessionHost
@@ -54,17 +55,24 @@ private final class TranslationSessionHost: ObservableObject {
     init() {
         let hostView = NSHostingView(rootView: HostView(host: self))
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
             styleMask: .borderless,
             backing: .buffered,
             defer: false
         )
         window.isOpaque = false
         window.backgroundColor = .clear
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.ignoresMouseEvents = true
+        window.alphaValue = 0.01 // Invisible to user, but kept active and unoccluded by WindowServer
         window.contentView = hostView
-        window.orderBack(nil)
+        window.orderFrontRegardless()
         self.hostWindow = window
     }
+    
+    // MARK: - Configuration Constants
+    static let translationTimeoutDuration: TimeInterval = 5.0
     
     func translate(
         text: String,
@@ -74,6 +82,26 @@ private final class TranslationSessionHost: ObservableObject {
         detectedSource: String?,
         completion: @escaping (Result<TranslationResult, Error>) -> Void
     ) {
+        timeoutTimer?.invalidate()
+        if let previous = self.pendingRequest {
+            let supersededError = NSError(
+                domain: "CopyShot.Translation",
+                code: -4,
+                userInfo: [NSLocalizedDescriptionKey: "Translation request superseded by newer request."]
+            )
+            previous.completion(.failure(supersededError))
+        }
+        
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let emptyError = NSError(
+                domain: "CopyShot.Translation",
+                code: -5,
+                userInfo: [NSLocalizedDescriptionKey: "No text found to translate."]
+            )
+            completion(.failure(emptyError))
+            return
+        }
+        
         self.pendingRequest = PendingTranslationRequest(
             text: text,
             targetLanguageCode: targetLanguageCode,
@@ -82,15 +110,39 @@ private final class TranslationSessionHost: ObservableObject {
             completion: completion
         )
         
+        // 5-second safety timeout so user is never left without feedback
+        timeoutTimer = Timer.scheduledTimer(withTimeInterval: Self.translationTimeoutDuration, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self, let request = self.pendingRequest else { return }
+                self.pendingRequest = nil
+                self.timeoutTimer = nil
+                let timeoutError = NSError(
+                    domain: "CopyShot.Translation",
+                    code: -3,
+                    userInfo: [NSLocalizedDescriptionKey: "Translation timed out. Please check that '\(targetLanguageName)' is downloaded in System Settings > General > Language & Region."]
+                )
+                request.completion(.failure(timeoutError))
+            }
+        }
+        
         let targetLang = Locale.Language(identifier: targetLanguageCode)
-        let sourceLang = detectedSource != nil ? Locale.Language(identifier: detectedSource!) : nil
+        let sourceLang: Locale.Language?
+        if let detected = detectedSource, detected.lowercased() != targetLanguageCode.lowercased() {
+            sourceLang = Locale.Language(identifier: detected)
+        } else {
+            sourceLang = nil
+        }
         
         var config = TranslationSession.Configuration(source: sourceLang, target: targetLang)
         config.invalidate()
         self.currentConfiguration = config
+        self.hostWindow?.orderFrontRegardless()
     }
     
     private func handleSession(_ session: TranslationSession) async {
+        timeoutTimer?.invalidate()
+        timeoutTimer = nil
+        
         guard let request = pendingRequest else { return }
         self.pendingRequest = nil
         
