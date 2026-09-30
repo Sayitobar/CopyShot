@@ -10,6 +10,7 @@ import UserNotifications
 import AppKit // For NSSound
 import SwiftUI // For Color
 
+@MainActor
 class FeedbackManager {
     
     static let shared = FeedbackManager()
@@ -29,7 +30,8 @@ class FeedbackManager {
         soundName: String? = nil,
         targetScreen: NSScreen? = nil,
         supportsQuickActions: Bool = false,
-        captureMode: CaptureMode = .standardOCR
+        captureMode: CaptureMode = .standardOCR,
+        actionContext: ActionContext? = nil
     ) {
         shared.presenter.showNotification(
             title: title,
@@ -41,7 +43,8 @@ class FeedbackManager {
             accentColor: accentColor,
             targetScreen: targetScreen,
             supportsQuickActions: supportsQuickActions,
-            captureMode: captureMode
+            captureMode: captureMode,
+            actionContext: actionContext
         )
         
         // Play sound directly

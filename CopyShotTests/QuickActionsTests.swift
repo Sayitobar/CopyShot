@@ -256,7 +256,7 @@ final class QuickActionsTests: XCTestCase {
         
         XCTAssertEqual(decoded, config)
         XCTAssertFalse(decoded.isEnabled)
-        XCTAssertEqual(decoded.actionOrder, ["search_web", "join_lines", "change_case"])
+        XCTAssertEqual(decoded.actionOrder, ["search_web", "join_lines", "change_case", "translate"])
         XCTAssertEqual(decoded.disabledActionIds, ["join_lines"])
         XCTAssertEqual(decoded.searchEngine, .duckDuckGo)
         XCTAssertEqual(decoded.defaultTranslateLanguage, "de")
@@ -459,12 +459,11 @@ final class QuickActionsTests: XCTestCase {
         let latexActions = QuickAction.actions(for: "E = mc^2", mode: .latex, config: config)
         XCTAssertEqual(latexActions.count, 1)
         XCTAssertEqual(latexActions.first?.id, "latex_wrap_dollar")
-        XCTAssertEqual(latexActions.first?.title, "Wrap $...$")
+        XCTAssertEqual(latexActions.first?.title, "Wrap Math")
         XCTAssertEqual(latexActions.first?.shortcutNumber, 1)
         
         // Table
         let tableActions = QuickAction.actions(for: "A\tB\nC\tD", mode: .table, config: config)
-        XCTAssertEqual(tableActions.count, 0)
+        XCTAssertEqual(tableActions.map(\.id), ["table_markdown", "table_csv"])
     }
 }
-

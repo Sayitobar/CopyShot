@@ -433,7 +433,7 @@ struct SettingsView: View {
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .background(
             // DYNAMIC CONTENT SIZING PROBE (measures natural height of layoutTab completely detached from visible layout)
-            tabContentView(for: layoutTab)
+            baselineContentView
                 .padding(.vertical, 32)
                 .padding(.horizontal, 24)
                 .fixedSize(horizontal: false, vertical: true)
@@ -471,6 +471,15 @@ struct SettingsView: View {
         }
     }
     
+    @ViewBuilder
+    private var baselineContentView: some View {
+        if layoutTab == .quickActions {
+            QuickActionsSettingsBaselineView()
+        } else {
+            tabContentView(for: layoutTab)
+        }
+    }
+
     private var isScrollNeeded: Bool {
         guard viewportHeight > 50 else { return false }
         return liveContentHeight > (viewportHeight + 2)

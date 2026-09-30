@@ -39,6 +39,7 @@ final class NotificationHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
+@MainActor
 class NotificationPresenter: ObservableObject {
     static func isPointInVisibleBox(_ point: NSPoint, windowHeight: CGFloat, visibleBoxHeight: CGFloat) -> Bool {
         let boxHeight = max(visibleBoxHeight, 78)
@@ -47,9 +48,20 @@ class NotificationPresenter: ObservableObject {
     }
 
     private let configProvider: () -> QuickActionsConfig
+    private let actionExecutor: any ActionExecuting
+    private let copyText: (String) -> Void
+    private let openURL: (URL) -> Bool
+    private let animationScheduler: ((@escaping () -> Void) -> Void)?
+    private var executionTask: Task<Void, Never>?
+    private var sessionGeneration = UUID()
+    private(set) var currentActionContext: ActionContext?
     private let dismissScheduler: (TimeInterval, @escaping () -> Void) -> AnyCancellable
 
     init(
+        actionExecutor: (any ActionExecuting)? = nil,
+        copyText: @escaping (String) -> Void = { ClipboardManager.copyToClipboard(text: $0) },
+        openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) },
+        animationScheduler: ((@escaping () -> Void) -> Void)? = nil,
         configProvider: @escaping () -> QuickActionsConfig = { SettingsManager.shared.quickActionsConfig },
         dismissScheduler: @escaping (TimeInterval, @escaping () -> Void) -> AnyCancellable = { duration, action in
         Just(true)
@@ -57,6 +69,10 @@ class NotificationPresenter: ObservableObject {
             .sink { _ in action() }
         }
     ) {
+        self.actionExecutor = actionExecutor ?? BuiltInActionExecutor()
+        self.copyText = copyText
+        self.openURL = openURL
+        self.animationScheduler = animationScheduler
         self.configProvider = configProvider
         self.dismissScheduler = dismissScheduler
     }
@@ -78,7 +94,13 @@ class NotificationPresenter: ObservableObject {
     var quickActions: [QuickAction] = QuickAction.defaultActions
     var currentCaptureMode: CaptureMode = .standardOCR
     
-    private var currentRawText: String? = nil
+    private var mainShelfNaturalHeight: CGFloat = 0
+    private var subShelfNaturalHeight: CGFloat = 0
+    private var subShelfInteractiveFrame: NSRect?
+    @Published fileprivate var mainShelfScrollHeight: CGFloat?
+    @Published fileprivate var subShelfScrollHeight: CGFloat?
+    @Published fileprivate var subShelfViewportHeight: CGFloat = 0
+    private var shelfCloseToken = UUID()
     private var dismissTimer: AnyCancellable?
     private var notificationDuration: TimeInterval = 3.0
     private var notificationWindow: NotificationHUDWindow?
@@ -115,7 +137,7 @@ class NotificationPresenter: ObservableObject {
     private func startShelfLivenessTracking() {
         stopShelfLivenessTracking()
         shelfLivenessTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            self?.checkMouseLiveness()
+            Task { @MainActor in self?.checkMouseLiveness() }
         }
     }
     
@@ -132,7 +154,7 @@ class NotificationPresenter: ObservableObject {
         
         let mouseLoc = NSEvent.mouseLocation
         let isOverMainShelf = shelfWindow?.frame.contains(mouseLoc) ?? false
-        let isOverSubShelf = (activeSubmenu != nil) && (subShelfWindow?.frame.contains(mouseLoc) ?? false)
+        let isOverSubShelf = (activeSubmenu != nil) && (subShelfInteractiveFrame?.contains(mouseLoc) ?? false)
         let isOverNotifBox = visibleNotificationBoxFrame?.contains(mouseLoc) ?? false
         
         if !isOverMainShelf && !isOverSubShelf && !isOverNotifBox {
@@ -158,13 +180,6 @@ class NotificationPresenter: ObservableObject {
         shelfPaddingLeading + shelfPillsWidth + shelfColumnGap
     }
     
-    private func calculateShelfWindowHeight(actionCount: Int) -> CGFloat {
-        let count = CGFloat(actionCount)
-        guard count > 0 else { return 0 }
-        let pillsHeight = count * 38 + (count - 1) * 6
-        return shelfPaddingTop + pillsHeight + shelfPaddingBottom
-    }
-    
     func showNotification(
         title: String,
         subtitle: String? = nil,
@@ -177,17 +192,21 @@ class NotificationPresenter: ObservableObject {
         duration: TimeInterval = 3.0,
         supportsQuickActions: Bool = false,
         quickActions: [QuickAction]? = nil,
-        captureMode: CaptureMode = .standardOCR
+        captureMode: CaptureMode = .standardOCR,
+        actionContext: ActionContext? = nil
     ) {
         // Dismiss any existing notification first
         dismissNotification()
         
         let config = configProvider()
         self.targetScreen = targetScreen
-        self.currentCaptureMode = captureMode
-        self.supportsQuickActions = supportsQuickActions && config.isEnabled
-        self.currentRawText = fullBody ?? body
-        self.quickActions = quickActions ?? QuickAction.actions(for: self.currentRawText, mode: captureMode, config: config)
+        let context = actionContext ?? ActionContext(text: fullBody ?? body, mode: captureMode)
+        self.currentActionContext = context
+        self.currentCaptureMode = context.mode
+        self.quickActions = quickActions ?? ActionRegistry.shared.actions(context: context, config: config)
+        mainShelfNaturalHeight = ShelfLayout.naturalHeight(actions: self.quickActions, submenu: false)
+        subShelfNaturalHeight = self.quickActions.compactMap(\.subActions).map { ShelfLayout.naturalHeight(actions: $0, submenu: true) }.max() ?? 0
+        self.supportsQuickActions = supportsQuickActions && config.isEnabled && !self.quickActions.isEmpty
         self.notificationDuration = max(0, duration)
         self.isShelfOpen = false
         self.activeSubmenu = nil
@@ -223,6 +242,7 @@ class NotificationPresenter: ObservableObject {
         }
         
         // Host the SwiftUI view in the window
+        let generation = sessionGeneration
         let notificationView = CustomNotificationView(
             title: notificationTitle,
             subtitle: notificationSubtitle,
@@ -252,6 +272,7 @@ class NotificationPresenter: ObservableObject {
             onHeightChange: { [weak self] newHeight in
                 guard let self = self else { return }
                 DispatchQueue.main.async {
+                    guard self.sessionGeneration == generation else { return }
                     self.currentVisibleBoxHeight = newHeight
                     if let win = self.notificationWindow, newHeight + 42 > win.frame.height {
                         self.updateNotificationWindowHeight(newHeight)
@@ -295,6 +316,7 @@ class NotificationPresenter: ObservableObject {
     private func openActionShelf() {
         guard supportsQuickActions, let notifWindow = notificationWindow, let _ = targetScreen ?? NSScreen.main else { return }
         
+        shelfCloseToken = UUID()
         isShelfOpen = true
         activeSubmenu = nil
         isHoveringSubShelf = false
@@ -311,8 +333,11 @@ class NotificationPresenter: ObservableObject {
         
         // Top of notification box inside notificationWindow:
         let notifBoxTopY = notifWindow.frame.origin.y + notifWindow.frame.height - 14
-        let shelfHeight = calculateShelfWindowHeight(actionCount: quickActions.count)
-        let shelfY = notifBoxTopY + shelfPaddingTop - shelfHeight
+        let screen = targetScreen ?? NSScreen.main!
+        let shelfTop = min(screen.visibleFrame.maxY, notifBoxTopY + shelfPaddingTop)
+        let shelfHeight = ShelfLayout.viewportHeight(naturalHeight: mainShelfNaturalHeight, availableHeight: shelfTop - screen.visibleFrame.minY)
+        mainShelfScrollHeight = mainShelfNaturalHeight > shelfHeight ? max(0, shelfHeight - shelfPaddingTop - shelfPaddingBottom) : nil
+        let shelfY = shelfTop - shelfHeight
         
         let shelfFrame = NSRect(x: shelfX, y: shelfY, width: width, height: shelfHeight)
         
@@ -357,7 +382,8 @@ class NotificationPresenter: ObservableObject {
     }
     
     private func openSubShelf(for action: QuickAction) {
-        guard let shelf = shelfWindow, let notifWindow = notificationWindow, let subActions = action.subActions, !subActions.isEmpty else { return }
+        guard let shelf = shelfWindow, let screen = targetScreen ?? NSScreen.main,
+              let subActions = action.subActions, !subActions.isEmpty else { return }
         
         // Invalidate any in-flight close animation block
         subShelfCloseToken = UUID()
@@ -369,9 +395,12 @@ class NotificationPresenter: ObservableObject {
         let subWidth = subShelfWindowWidth
         let subX = shelf.frame.origin.x - (shelfPillsWidth + shelfColumnGap)
         
-        let notifBoxTopY = notifWindow.frame.origin.y + notifWindow.frame.height - 14
-        let subHeight = calculateShelfWindowHeight(actionCount: subActions.count)
-        let subY = notifBoxTopY + shelfPaddingTop - subHeight
+        let subHeight = ShelfLayout.viewportHeight(naturalHeight: subShelfNaturalHeight, availableHeight: shelf.frame.maxY - screen.visibleFrame.minY)
+        let activeHeight = min(subHeight, ShelfLayout.naturalHeight(actions: subActions, submenu: true))
+        subShelfViewportHeight = subHeight
+        subShelfScrollHeight = activeHeight < ShelfLayout.naturalHeight(actions: subActions, submenu: true) ? max(0, activeHeight - shelfPaddingTop - shelfPaddingBottom) : nil
+        let subY = shelf.frame.maxY - subHeight
+        subShelfInteractiveFrame = NSRect(x: subX, y: shelf.frame.maxY - activeHeight, width: subWidth, height: activeHeight)
         
         let subFrame = NSRect(x: subX, y: subY, width: subWidth, height: subHeight)
         
@@ -401,6 +430,9 @@ class NotificationPresenter: ObservableObject {
             subShelfWindow?.contentView = host
         }
         
+        if let host = subShelfHostingView as? NotificationHostingView<AnyView> {
+            host.isHitInNotificationBox = { point in point.y >= subHeight - activeHeight }
+        }
         subShelfWindow?.orderFrontRegardless()
         if subShelfWindow?.alphaValue ?? 0 < 1.0 {
             NSAnimationContext.runAnimationGroup { context in
@@ -428,13 +460,13 @@ class NotificationPresenter: ObservableObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             subShelf.animator().alphaValue = 0
         }) { [weak self] in
-            guard let self = self, self.subShelfCloseToken == closeToken else {
+            Task { @MainActor in
+                guard let self, self.subShelfCloseToken == closeToken else { return }
+                subShelf.orderOut(nil)
+                self.subShelfHostingView = nil
+                self.subShelfInteractiveFrame = nil
                 completion?()
-                return
             }
-            subShelf.orderOut(nil)
-            self.subShelfHostingView = nil
-            completion?()
         }
     }
     
@@ -442,6 +474,7 @@ class NotificationPresenter: ObservableObject {
         subShelfCloseToken = UUID()
         activeSubmenu = nil
         isHoveringSubShelf = false
+        subShelfInteractiveFrame = nil
         subShelfWindow?.orderOut(nil)
         subShelfHostingView = nil
     }
@@ -499,7 +532,7 @@ class NotificationPresenter: ObservableObject {
             }
             
             let mouseLoc = NSEvent.mouseLocation
-            let isOverSub = self.subShelfWindow?.frame.contains(mouseLoc) ?? false
+            let isOverSub = self.subShelfInteractiveFrame?.contains(mouseLoc) ?? false
             let isOverMain = self.shelfWindow?.frame.contains(mouseLoc) ?? false
             
             if isOverSub {
@@ -529,23 +562,31 @@ class NotificationPresenter: ObservableObject {
             return
         }
         
+        let generation = sessionGeneration
+        let closeToken = UUID()
+        shelfCloseToken = closeToken
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             shelf.animator().alphaValue = 0
             self.subShelfWindow?.animator().alphaValue = 0
-        }) {
-            shelf.orderOut(nil)
-            self.subShelfWindow?.orderOut(nil)
-            self.shelfHostingView = nil
-            self.subShelfHostingView = nil
-            self.activeSubmenu = nil
-            self.isHoveringSubShelf = false
-            completion?()
+        }) { [weak self] in
+            Task { @MainActor in
+                guard let self, self.sessionGeneration == generation, self.shelfCloseToken == closeToken else { return }
+                shelf.orderOut(nil)
+                self.subShelfWindow?.orderOut(nil)
+                self.shelfHostingView = nil
+                self.subShelfHostingView = nil
+                self.activeSubmenu = nil
+                self.isHoveringSubShelf = false
+                self.subShelfInteractiveFrame = nil
+                completion?()
+            }
         }
     }
     
     private func closeActionShelfInstantly() {
+        shelfCloseToken = UUID()
         stopShelfLivenessTracking()
         hoverGraceTimer?.cancel()
         hoverGraceTimer = nil
@@ -571,7 +612,15 @@ class NotificationPresenter: ObservableObject {
         dismissTimer?.cancel()
     }
     
-    func dismissNotification() {
+    func invalidatePendingActions() {
+        sessionGeneration = UUID()
+        executionTask?.cancel()
+        executionTask = nil
+    }
+
+    func dismissNotification(preservingSession: Bool = false) {
+        if !preservingSession { invalidatePendingActions() }
+
         stopShelfLivenessTracking()
         stopKeyMonitoring()
         closeActionShelfInstantly()
@@ -582,24 +631,31 @@ class NotificationPresenter: ObservableObject {
         hostingView = nil
     }
     
-    private func hideNotificationWithAnimation(completion: (() -> Void)? = nil) {
+    private func hideNotificationWithAnimation(preservingSession: Bool = false, completion: (() -> Void)? = nil) {
+        if !preservingSession { invalidatePendingActions() }
+        let generation = sessionGeneration
+        cancelDismissTimer()
         stopShelfLivenessTracking()
         stopKeyMonitoring()
-        self.isShowingNotification = false
-        self.isShelfOpen = false
-        
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.2
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            self.notificationWindow?.animator().alphaValue = 0
-            self.shelfWindow?.animator().alphaValue = 0
-            self.subShelfWindow?.animator().alphaValue = 0
-        }) {
-            self.dismissNotification()
+        isShowingNotification = false
+        isShelfOpen = false
+        let finish = { [weak self] in
+            guard let self, self.sessionGeneration == generation else { return }
+            self.dismissNotification(preservingSession: true)
             completion?()
         }
+        if let animationScheduler {
+            animationScheduler(finish)
+        } else {
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.2
+                self.notificationWindow?.animator().alphaValue = 0
+                self.shelfWindow?.animator().alphaValue = 0
+                self.subShelfWindow?.animator().alphaValue = 0
+            }, completionHandler: { Task { @MainActor in finish() } })
+        }
     }
-    
+
     // MARK: - Static Window Positioning (Zero Teleportation)
     
     private func updateNotificationWindowHeight(_ height: CGFloat) {
@@ -654,7 +710,7 @@ class NotificationPresenter: ObservableObject {
             // Deterministically check cursor location against actual window frames and visible notification box
             let mouseLoc = NSEvent.mouseLocation
             let isOverMainShelf = self.isShelfOpen && (self.shelfWindow?.frame.contains(mouseLoc) ?? false)
-            let isOverSubShelf = self.activeSubmenu != nil && (self.subShelfWindow?.frame.contains(mouseLoc) ?? false)
+            let isOverSubShelf = self.activeSubmenu != nil && (self.subShelfInteractiveFrame?.contains(mouseLoc) ?? false)
             let isOverNotif = self.visibleNotificationBoxFrame?.contains(mouseLoc) ?? false
             
             let isOverAnyShelf = isOverMainShelf || isOverSubShelf
@@ -701,13 +757,7 @@ class NotificationPresenter: ObservableObject {
             if let chars = event.charactersIgnoringModifiers,
                let digit = Int(chars),
                (1...9).contains(digit) {
-                // If a submenu flyout is currently open, 1-9 shortcuts map to its sub-actions
-                if let submenu = self.activeSubmenu,
-                   let subActions = submenu.subActions,
-                   let subAction = subActions.first(where: { $0.shortcutNumber == digit }) {
-                    self.triggerQuickAction(subAction)
-                    return nil
-                } else if let action = self.quickActions.first(where: { $0.shortcutNumber == digit }) {
+                if let action = self.actionForShortcut(digit) {
                     self.triggerQuickAction(action)
                     return nil
                 }
@@ -716,6 +766,12 @@ class NotificationPresenter: ObservableObject {
         }
     }
     
+    func actionForShortcut(_ digit: Int) -> QuickAction? {
+        guard (1...9).contains(digit) else { return nil }
+        let actions = activeSubmenu?.subActions ?? (activeSubmenu == nil ? quickActions : [])
+        return actions.first { $0.shortcutNumber == digit }
+    }
+
     private func stopKeyMonitoring() {
         if let monitor = keyEventMonitor {
             NSEvent.removeMonitor(monitor)
@@ -731,118 +787,46 @@ class NotificationPresenter: ObservableObject {
     // MARK: - Action Execution & Feedback
     
     func triggerQuickAction(_ action: QuickAction) {
-        guard let rawText = currentRawText, !rawText.isEmpty else { return }
-        
-        // Slot 3: Search Web / Open URL (Zero confirmation notification on success)
-        if action.id == "search_web" {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-            FeedbackManager.playSuccessSound()
-            
-            hideNotificationWithAnimation { [weak self] in
-                guard let self = self else { return }
-                let engine = configProvider().searchEngine
-                let success = WebActionHelper.execute(for: rawText, engine: engine)
-                if !success {
-                    FeedbackManager.showNotification(
-                        title: "Unable to Open",
-                        subtitle: "Could not open URL or search web",
-                        body: rawText,
-                        iconName: "exclamationmark.triangle.fill",
-                        accentColor: .orange,
-                        targetScreen: self.targetScreen
-                    )
-                }
-            }
+        if action.operation == .submenu {
+            openSubShelf(for: action)
             return
         }
-        
-        // Slot 4 & Sub-actions: On-Device Translate (macOS 15+)
-        if let targetLang = action.targetLanguageCode {
-            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-            FeedbackManager.playSuccessSound()
-            
-            hideNotificationWithAnimation { [weak self] in
-                guard let self = self else { return }
-                Task { @MainActor in
-                    TranslationService.shared.translate(text: rawText, targetLanguageCode: targetLang) { [weak self] result in
-                        guard let self = self else { return }
-                        switch result {
-                    case .success(let translation):
-                        ClipboardManager.copyToClipboard(text: translation.translatedText)
-                        
-                        let previewText: String
-                        previewText = TextPreview.format(
-                            translation.translatedText,
-                            limit: SettingsManager.shared.textPreviewLimit
-                        )
-                        
-                        FeedbackManager.showNotification(
-                            title: "Translated to \(translation.targetLanguageName)",
-                            subtitle: "\(translation.sourceLanguageName) → \(translation.targetLanguageName)",
-                            body: previewText,
-                            fullBody: translation.translatedText,
-                            customIcon: .system("translate"),
-                            accentColor: .adaptiveGreen,
-                            soundName: "Funk",
-                            targetScreen: self.targetScreen,
-                            supportsQuickActions: true,
-                            captureMode: self.currentCaptureMode
-                        )
-                        
-                    case .failure(let error):
-                        let targetName = TranslationService.localizedLanguageName(for: targetLang)
-                        FeedbackManager.showNotification(
-                            title: "Translation Failed",
-                            subtitle: "Could not translate to \(targetName)",
-                            body: error.localizedDescription,
-                            iconName: "exclamationmark.triangle.fill",
-                            accentColor: .orange,
-                            targetScreen: self.targetScreen
-                        )
+        guard let context = currentActionContext, !context.text.isEmpty else { return }
+        let config = configProvider()
+        let screen = targetScreen
+        let generation = sessionGeneration
+        hideNotificationWithAnimation(preservingSession: true) { [weak self] in
+            guard let self, self.sessionGeneration == generation else { return }
+            self.executionTask?.cancel()
+            self.executionTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let result = try await self.actionExecutor.execute(action, context: context, config: config)
+                    guard !Task.isCancelled, self.sessionGeneration == generation else { return }
+                    switch result {
+                    case .openURL(let url):
+                        guard self.openURL(url) else { throw ActionExecutionError.invalidURL }
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                        FeedbackManager.playSuccessSound()
+                    case .copy(let updated, let subtitle):
+                        self.copyText(updated.text)
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                        FeedbackManager.playSuccessSound()
+                        self.showNotification(title: "Quick Action: \(action.title)", subtitle: subtitle,
+                                              body: TextPreview.format(updated.text, limit: SettingsManager.shared.textPreviewLimit),
+                                              fullBody: updated.text, customIcon: action.icon, accentColor: .adaptiveGreen,
+                                              targetScreen: screen, supportsQuickActions: true, actionContext: updated)
                     }
+                } catch {
+                    guard !Task.isCancelled, self.sessionGeneration == generation else { return }
+                    self.showNotification(title: "Quick Action Failed", subtitle: action.title,
+                                          body: error.localizedDescription, iconName: "exclamationmark.triangle.fill",
+                                          accentColor: .orange, targetScreen: screen)
                 }
             }
         }
-        return
-        }
-        
-        // Standard String Transformations (Join Lines, Case Transforms)
-        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
-        FeedbackManager.playSuccessSound()
-        
-        // Fade out existing bars and notification HUD
-        hideNotificationWithAnimation { [weak self] in
-            guard let self = self else { return }
-            
-            // Execute preprocessing transformation
-            let transformedText = action.transform(rawText)
-            
-            // Copy newly preprocessed text to clipboard
-            ClipboardManager.copyToClipboard(text: transformedText)
-            
-            // Format preview text
-            let previewText: String
-            if SettingsManager.shared.textPreviewLimit > 0 && transformedText.count > SettingsManager.shared.textPreviewLimit {
-                previewText = String(transformedText.prefix(SettingsManager.shared.textPreviewLimit)) + "..."
-            } else {
-                previewText = transformedText
-            }
-            
-            // Present new notification with Quick Action tag and chained quick action support
-            FeedbackManager.showNotification(
-                title: "Quick Action: \(action.title)",
-                subtitle: "Processed text:",
-                body: previewText,
-                fullBody: transformedText,
-                customIcon: action.icon,
-                accentColor: .adaptiveGreen,
-                soundName: "Funk",
-                targetScreen: self.targetScreen,
-                supportsQuickActions: true,
-                captureMode: self.currentCaptureMode
-            )
-        }
     }
+
 }
 
 // MARK: - Action Shelf Reactive Container
@@ -854,6 +838,7 @@ private struct ActionShelfContainerView: View {
         ActionShelfView(
             actions: presenter.quickActions,
             accentColor: presenter.notificationAccentColor,
+            viewportHeight: presenter.mainShelfScrollHeight,
             activeSubmenuId: presenter.activeSubmenu?.id,
             isSubShelfHovered: presenter.isHoveringSubShelf,
             onActionSelected: { [weak presenter] action in
@@ -878,6 +863,7 @@ private struct ActionSubShelfContainerView: View {
         ActionSubShelfView(
             subActions: subActions,
             accentColor: presenter.notificationAccentColor,
+            viewportHeight: presenter.subShelfScrollHeight,
             isMainShelfHovered: presenter.isHoveringShelf,
             onActionSelected: { [weak presenter] selectedAction in
                 presenter?.triggerQuickAction(selectedAction)
@@ -886,6 +872,9 @@ private struct ActionSubShelfContainerView: View {
                 presenter?.handleSubShelfHover(hovering)
             }
         )
+        .frame(height: presenter.subShelfViewportHeight, alignment: .top)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("qa-submenu-content")
         .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
     }
 }

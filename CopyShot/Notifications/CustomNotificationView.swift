@@ -48,6 +48,9 @@ struct CustomNotificationView: View {
                 // Fixed in layout to eliminate any teleportation or layout shifts.
                 // Fades in/out synchronously with cross and expand buttons (0.2s easeInOut).
                 leftArrowIndicator
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Quick Actions")
+                    .accessibilityIdentifier("qa-shelf-handle")
                     .opacity((supportsQuickActions && isIndicatorVisible && !isShelfOpen) ? 1 : 0)
                     .allowsHitTesting(supportsQuickActions && isIndicatorVisible && !isShelfOpen)
                     .animation(.easeInOut(duration: 0.2), value: isIndicatorVisible)
@@ -62,11 +65,14 @@ struct CustomNotificationView: View {
                     
                     // The Real Notification Box (hover state tracked strictly on this visible box)
                     notificationBox(expanded: isExpanded)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("qa-hud-content")
                         .background(
                             // Sizing Double: strictly for measuring collapsed height without affecting parent layout or hover bounds
                             notificationBox(expanded: false)
                                 .opacity(0)
                                 .allowsHitTesting(false)
+                                .accessibilityHidden(true)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .background(
                                     GeometryReader { geometry in
@@ -81,6 +87,7 @@ struct CustomNotificationView: View {
                             notificationBox(expanded: true)
                                 .opacity(0)
                                 .allowsHitTesting(false)
+                                .accessibilityHidden(true)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .background(
                                     GeometryReader { geometry in

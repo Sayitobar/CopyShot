@@ -24,9 +24,12 @@ private func calculateDragOffset(index: Int, isDragging: Bool, dragStart: Int?, 
 struct QuickActionsSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
     @State private var expandedActionId: String? = nil
-    @State private var showingCustomActionTemplate: Bool = false
-    @State private var customActionName: String = "Format JSON"
-    @State private var customActionType: String = "Shell Script"
+    var baselineMode: CaptureMode? = nil
+    @State private var selectedMode: CaptureMode = .standardOCR
+    @State private var rowHeights: [String: CGFloat] = [:]
+    private var mode: CaptureMode { baselineMode ?? selectedMode }
+    private var catalog: [ActionCatalogEntry] { ActionRegistry.shared.catalog(for: mode, config: settings.quickActionsConfig) }
+    private var scopedConfig: ModeActionConfiguration { settings.quickActionsConfig.modeConfiguration(for: mode) }
     @State private var showingResetConfirmation: Bool = false
     
     // Direct manipulation drag states
@@ -36,7 +39,7 @@ struct QuickActionsSettingsView: View {
     @State private var dragTranslation: CGFloat = 0
     
     private var metadataMap: [String: ActionMetadata] {
-        Dictionary(uniqueKeysWithValues: ActionMetadata.allActions.map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: catalog.map { ($0.metadata.id, $0.metadata) })
     }
     
     var body: some View {
@@ -75,17 +78,20 @@ struct QuickActionsSettingsView: View {
                         .labelsHidden()
                 }
                 
+                modeSwitcher
+
                 // MARK: - Action Shelf Order & Visibility List
                 VStack(alignment: .leading, spacing: 8) {
-                    SettingsSectionHeader(title: "OCR (Text)")
+                    SettingsSectionHeader(title: "Actions for \(CaptureModeDescriptor.descriptor(for: mode)?.title ?? mode.rawValue)")
                     
-                    let activeOrder = settings.quickActionsConfig.actionOrder.filter { metadataMap[$0] != nil }
-                    let rowHeight: CGFloat = 38
+                    let activeOrder = catalog.map { $0.metadata.id }
                     
                     VStack(spacing: 0) {
                         ForEach(Array(activeOrder.enumerated()), id: \.element) { index, actionId in
                             if let metadata = metadataMap[actionId] {
-                                let isEnabled = !settings.quickActionsConfig.disabledActionIds.contains(actionId)
+                                let unavailableReason = catalog.first { $0.metadata.id == actionId }?.unavailableReason
+                                let isEnabled = !scopedConfig.disabledActionIds.contains(actionId) && unavailableReason == nil
+                                let rowHeight = rowHeights[draggingActionId ?? actionId] ?? 0
                                 let isExpanded = expandedActionId == actionId
                                 let isLast = index == activeOrder.count - 1
                                 let isDragging = draggingActionId == actionId
@@ -100,6 +106,9 @@ struct QuickActionsSettingsView: View {
                                 
                                 ActionRowView(
                                     metadata: metadata,
+                                    showsDivider: !isLast,
+                                    unavailableReason: unavailableReason,
+                                    mode: mode,
                                     isEnabled: isEnabled,
                                     isExpanded: isExpanded,
                                     isDragging: isDragging,
@@ -116,6 +125,11 @@ struct QuickActionsSettingsView: View {
                                         handleMainDragEnded(activeOrder: activeOrder)
                                     }
                                 )
+                                .background(GeometryReader { geometry in
+                                    Color.clear.preference(key: ActionRowHeightKey.self, value: [actionId: geometry.size.height])
+                                })
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("qa-row-\(mode.rawValue)-\(actionId)")
                                 .offset(y: rowOffset)
                                 .animation(isDragging ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: rowOffset)
                                 .scaleEffect(isDragging ? 1.015 : 1.0)
@@ -123,7 +137,7 @@ struct QuickActionsSettingsView: View {
                                 .zIndex(isDragging ? 100 : 2)
                                 
                                 // Narrower Inset Configuration Drawer: Left edge at Action Icon (36), Right edge at Collapse Button (46)
-                                if isExpanded && isEnabled && (metadata.hasParameters || metadata.hasSubActions) {
+                                if baselineMode == nil && isExpanded && isEnabled && (metadata.hasParameters || metadata.hasSubActions) {
                                     VStack(spacing: 0) {
                                         HStack(spacing: 0) {
                                             Color.clear.frame(width: 36, height: 1)
@@ -147,11 +161,6 @@ struct QuickActionsSettingsView: View {
                                     .transition(.opacity)
                                 }
                                 
-                                if !isLast {
-                                    Divider()
-                                        .opacity(0.35)
-                                        .padding(.leading, 36)
-                                }
                             }
                         }
                     }
@@ -163,162 +172,14 @@ struct QuickActionsSettingsView: View {
                     )
                 }
                 
-                // MARK: - Custom Actions Template Card
                 VStack(alignment: .leading, spacing: 8) {
                     SettingsSectionHeader(title: "Custom Actions")
-                    
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack(spacing: 8) {
-                            // Alignment Spacer matching grip handle width (18pt)
-                            Color.clear
-                                .frame(width: 18, height: 26)
-                            
-                            // Action Icon Badge
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(Color.purple.opacity(0.14))
-                                    .frame(width: 24, height: 24)
-                                
-                                Image(systemName: "plus.circle.dashed")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(.purple)
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Create Custom Action")
-                                    .font(.system(size: 12.5, weight: .medium))
-                                    .foregroundStyle(.primary)
-                                
-                                Text("Execute bespoke Shell commands or AppleScript on captured text.")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Spacer()
-                            
-                            // Configure Button with continuous rounded rect matching ActionRowView
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    showingCustomActionTemplate.toggle()
-                                }
-                            } label: {
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .rotationEffect(.degrees(showingCustomActionTemplate ? 180 : 0))
-                                    .foregroundStyle(showingCustomActionTemplate ? .blue : .secondary)
-                                    .frame(width: 22, height: 22)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                            .fill(showingCustomActionTemplate ? Color.blue.opacity(0.15) : Color.primary.opacity(0.06))
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                            .stroke(showingCustomActionTemplate ? Color.blue.opacity(0.3) : Color.secondary.opacity(0.2), lineWidth: 0.5)
-                                    )
-                                    .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                            .help(showingCustomActionTemplate ? "Hide Template" : "Configure Custom Action")
-                            
-                            // Alignment Spacer matching mini toggle width (28pt)
-                            Color.clear
-                                .frame(width: 28, height: 22)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(Color(NSColor.controlBackgroundColor))
-                        .zIndex(2)
-                        
-                        // Narrower Inset Custom Action Drawer: Left edge at 36, Right edge at 46
-                        if showingCustomActionTemplate {
-                            VStack(spacing: 0) {
-                                HStack(spacing: 0) {
-                                Color.clear.frame(width: 36, height: 1)
-                                
-                                VStack(alignment: .leading, spacing: 10) {
-                                    HStack(spacing: 12) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Action Name")
-                                                .font(.system(size: 10.5, weight: .medium))
-                                                .foregroundStyle(.secondary)
-                                            TextField("Format JSON", text: $customActionName)
-                                                .textFieldStyle(.roundedBorder)
-                                                .controlSize(.small)
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Engine")
-                                                .font(.system(size: 10.5, weight: .medium))
-                                                .foregroundStyle(.secondary)
-                                            Picker("", selection: $customActionType) {
-                                                Text("Shell (zsh)").tag("Shell Script")
-                                                Text("AppleScript").tag("AppleScript")
-                                                Text("URL Scheme").tag("URL Scheme")
-                                            }
-                                            .labelsHidden()
-                                            .controlSize(.small)
-                                            .frame(width: 130)
-                                        }
-                                    }
-                                    
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Script Template (Passed as $1 / STDIN)")
-                                            .font(.system(size: 10.5, weight: .medium))
-                                            .foregroundStyle(.secondary)
-                                        Text("echo \"$1\" | jq .")
-                                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                            .foregroundStyle(.secondary)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .padding(8)
-                                            .background(Color(NSColor.textBackgroundColor).opacity(0.6))
-                                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                    }
-                                    
-                                    HStack {
-                                        HStack(spacing: 5) {
-                                            Image(systemName: "info.circle.fill")
-                                                .font(.system(size: 10))
-                                                .foregroundStyle(.orange)
-                                            Text("Custom Action Engine coming in v1.3 • Template Preview")
-                                                .font(.system(size: 10))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        Button("Save Action") {}
-                                            .buttonStyle(.borderedProminent)
-                                            .controlSize(.small)
-                                            .disabled(true)
-                                    }
-                                }
-                                .padding(10)
-                                .background(Color(NSColor.controlBackgroundColor).opacity(0.75))
-                                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .stroke(Color.secondary.opacity(0.16), lineWidth: 0.5)
-                                )
-                                
-                                Color.clear.frame(width: 46, height: 1)
-                            }
-                            .padding(.top, 6)
-                            .padding(.bottom, 8)
-                        }
-                        .clipped()
-                        .zIndex(1)
-                        .transition(.opacity)
-                    }
-                    }
-                    .background(Color(NSColor.controlBackgroundColor).opacity(0.55))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
-                    )
+                    Label("Custom actions coming later", systemImage: "plus.circle.dashed")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.secondary)
+                        .padding(10)
                 }
-                
+
                 // MARK: - Reset to Defaults
                 HStack {
                     Spacer()
@@ -337,17 +198,50 @@ struct QuickActionsSettingsView: View {
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("This will restore default action ordering, enable all built-in actions, and revert search engine and language preferences.")
+                        Text("This will restore default action ordering and enabled states for every capture mode, and reset shared Quick Actions preferences.")
                     }
                 }
             }
         }
+        .onPreferenceChange(ActionRowHeightKey.self) { rowHeights = $0 }
+        .onChange(of: selectedMode) {
+            expandedActionId = nil
+            draggingActionId = nil
+            dragStartIndex = nil
+            dragTargetIndex = nil
+            dragTranslation = 0
+            rowHeights = [:]
+        }
     }
-    
+
+    private var modeSwitcher: some View {
+        HStack(spacing: 4) {
+            ForEach(CaptureModeDescriptor.available) { descriptor in
+                Button {
+                    selectedMode = descriptor.id
+                } label: {
+                    Label(descriptor.id == .qrBarcode ? "QR / Barcode" : descriptor.title, systemImage: descriptor.symbol)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(mode == descriptor.id ? Color.accentColor.opacity(0.15) : Color.clear))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("qa-mode-\(descriptor.id.rawValue)")
+                .accessibilityAddTraits(mode == descriptor.id ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("qa-mode-switcher")
+    }
+
     // MARK: - Mutation & Drag Helpers
     
     private func toggleAction(id: String) {
-        var disabled = Set(settings.quickActionsConfig.disabledActionIds)
+        var scoped = scopedConfig
+        var disabled = Set(scoped.disabledActionIds)
         if disabled.contains(id) {
             disabled.remove(id)
         } else {
@@ -359,7 +253,8 @@ struct QuickActionsSettingsView: View {
             }
         }
         withAnimation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.25)) {
-            settings.quickActionsConfig.disabledActionIds = Array(disabled)
+            scoped.disabledActionIds = disabled.sorted()
+            settings.quickActionsConfig.setModeConfiguration(scoped, for: mode)
         }
     }
     
@@ -375,9 +270,7 @@ struct QuickActionsSettingsView: View {
             }
         }
         guard let startIdx = dragStartIndex else { return }
-        let rowHeight: CGFloat = 38
-        let slotDelta = Int(round(translation / rowHeight))
-        let newTargetIndex = max(0, min(activeOrder.count - 1, startIdx + slotDelta))
+        let newTargetIndex = ActionReorderLayout.targetIndex(order: activeOrder, heights: rowHeights, startIndex: startIdx, translation: translation)
         
         if newTargetIndex != dragTargetIndex {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
@@ -396,14 +289,16 @@ struct QuickActionsSettingsView: View {
         }
         
         if startIdx != targetIdx {
-            var order = settings.quickActionsConfig.actionOrder
+            var scoped = scopedConfig
+            var order = scoped.actionOrder
             if let fromIdx = order.firstIndex(of: actionId),
                let toAction = activeOrder[targetIdx] as String?,
                let toIdx = order.firstIndex(of: toAction) {
                 order.remove(at: fromIdx)
                 order.insert(actionId, at: toIdx)
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                    settings.quickActionsConfig.actionOrder = order
+                    scoped.actionOrder = order
+                    settings.quickActionsConfig.setModeConfiguration(scoped, for: mode)
                 }
             }
         }
@@ -421,6 +316,9 @@ struct QuickActionsSettingsView: View {
 
 private struct ActionRowView: View {
     let metadata: ActionMetadata
+    var showsDivider = true
+    var unavailableReason: String? = nil
+    var mode: CaptureMode = .standardOCR
     let isEnabled: Bool
     let isExpanded: Bool
     let isDragging: Bool
@@ -462,9 +360,14 @@ private struct ActionRowView: View {
             }
             
             // Title Only (No explanation in non-extended form)
-            Text(metadata.title)
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(isEnabled ? .primary : .secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(metadata.title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(isEnabled ? .primary : .secondary)
+                if let unavailableReason {
+                    Text(unavailableReason).font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+            }
             
             Spacer()
             
@@ -489,6 +392,7 @@ private struct ActionRowView: View {
                 .buttonStyle(.plain)
                 .disabled(!isEnabled)
                 .help(isExpanded ? "Hide Settings" : "Configure Action")
+                .accessibilityIdentifier("qa-configure-\(metadata.id)")
             }
             
             // Enable Toggle Switch
@@ -499,11 +403,16 @@ private struct ActionRowView: View {
             .toggleStyle(.switch)
             .labelsHidden()
             .controlSize(.mini)
+            .disabled(unavailableReason != nil)
+            .accessibilityIdentifier("qa-enabled-\(mode.rawValue)-\(metadata.id)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(isDragging ? Color(NSColor.controlBackgroundColor) : Color(NSColor.controlBackgroundColor))
         .contentShape(Rectangle())
+        .overlay(alignment: .bottom) {
+            if showsDivider { Divider().opacity(0.35).padding(.leading, 36) }
+        }
     }
 }
 
@@ -533,7 +442,7 @@ private struct ActionDrawerDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Action Specific Parameters
-            if actionId == "search_web" {
+            if ActionMetadata.allActions.first(where: { $0.id == actionId })?.parameters.contains(.searchEngine) == true {
                 HStack(spacing: 8) {
                     Text("Search Engine:")
                         .font(.system(size: 11.5, weight: .medium))
@@ -548,7 +457,7 @@ private struct ActionDrawerDetailView: View {
                         minWidth: 125
                     )
                 }
-            } else if actionId == "translate" {
+            } else if ActionMetadata.allActions.first(where: { $0.id == actionId })?.parameters.contains(.translateLanguage) == true {
                 HStack(spacing: 8) {
                     Text("Default Language:")
                         .font(.system(size: 11.5, weight: .medium))
@@ -565,6 +474,14 @@ private struct ActionDrawerDetailView: View {
                 }
             }
             
+            if ActionMetadata.allActions.first(where: { $0.id == actionId })?.parameters.contains(.markdownHeader) == true {
+                Toggle("Use first row as header", isOn: $settings.quickActionsConfig.markdownUsesFirstRowAsHeader)
+                    .font(.system(size: 11.5))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("qa-markdown-header")
+            }
+
             // Sub-actions Ordering List (Change Case transforms with Checkboxes)
             if actionId == "change_case" {
                 let subActionList = ActionMetadata.caseSubActionsMetadata

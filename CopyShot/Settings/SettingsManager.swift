@@ -78,7 +78,20 @@ struct HotkeyConfig: Codable, Equatable {
 
 class SettingsManager: ObservableObject {
     // Singleton pattern to access settings from anywhere.
-    static let shared = SettingsManager()
+    static let shared: SettingsManager = {
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-show-settings"),
+           let suite = ProcessInfo.processInfo.environment["COPYSHOT_UI_TEST_SETTINGS_SUITE"],
+           suite.hasPrefix("CopyShot.UITests."), let defaults = UserDefaults(suiteName: suite) {
+            defaults.removePersistentDomain(forName: suite)
+            let settings = SettingsManager(defaults: defaults)
+            if let rawAppearance = ProcessInfo.processInfo.environment["COPYSHOT_UI_TEST_APPEARANCE"],
+               let appearance = AppAppearance(rawValue: rawAppearance) {
+                settings.appearance = appearance
+            }
+            return settings
+        }
+        return SettingsManager()
+    }()
     private let defaults: UserDefaults
     
     // @Published properties will automatically update any SwiftUI views that use them.

@@ -86,8 +86,8 @@ struct ActionPillView: View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
                 // Number badge for 1-9 direct keyboard access
-                if SettingsManager.shared.quickActionsConfig.showNumericShortcuts {
-                    Text("\(action.shortcutNumber)")
+                if SettingsManager.shared.quickActionsConfig.showNumericShortcuts, let shortcut = action.shortcutNumber {
+                    Text("\(shortcut)")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .frame(width: 20, height: 20)
@@ -155,9 +155,13 @@ struct ActionPillView: View {
             .animation(ActionPillTheme.hoverAnimation, value: isHovered)
             .animation(ActionPillTheme.activeAnimation, value: isSubmenuActive)
             .contentShape(RoundedRectangle(cornerRadius: ActionPillTheme.cornerRadius, style: .continuous))
-            .debugZone("Pill \(action.shortcutNumber)", type: .interactive)
+            .debugZone("Pill \(action.id)", type: .interactive)
         }
         .buttonStyle(.plain)
+        .help(action.helpText ?? action.title)
+        .accessibilityLabel(action.helpText ?? action.title)
+        .accessibilityIdentifier("qa-action-\(action.id)")
+        .accessibilityValue(action.shortcutNumber.map { "Shortcut \($0)" } ?? "No numeric shortcut")
         .onHover { hovering in
             if hovering && !isHovered && SettingsManager.shared.quickActionsConfig.playHapticsOnHover {
                 // Tactile Mac feedback on hover
@@ -178,4 +182,3 @@ struct ActionPillView: View {
         )
     }
 }
-

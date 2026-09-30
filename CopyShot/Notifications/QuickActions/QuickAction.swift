@@ -22,10 +22,12 @@ struct QuickAction: Identifiable, Equatable {
     let id: String
     let title: String
     let icon: ActionIcon
-    let shortcutNumber: Int
+    var shortcutNumber: Int?
     let transform: (String) -> String
     let subActions: [QuickAction]?
     let targetLanguageCode: String?
+    let operation: ActionOperation
+    let helpText: String?
     
     var hasSubmenu: Bool {
         guard let subActions = subActions else { return false }
@@ -36,10 +38,12 @@ struct QuickAction: Identifiable, Equatable {
         id: String,
         title: String,
         icon: ActionIcon,
-        shortcutNumber: Int,
+        shortcutNumber: Int?,
         transform: @escaping (String) -> String = { $0 },
         subActions: [QuickAction]? = nil,
-        targetLanguageCode: String? = nil
+        targetLanguageCode: String? = nil,
+        operation: ActionOperation? = nil,
+        helpText: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -48,9 +52,13 @@ struct QuickAction: Identifiable, Equatable {
         self.transform = transform
         self.subActions = subActions
         self.targetLanguageCode = targetLanguageCode
+        self.operation = operation ?? targetLanguageCode.map(ActionOperation.translate) ?? .transform
+        self.helpText = helpText
     }
     
     static func == (lhs: QuickAction, rhs: QuickAction) -> Bool {
+        lhs.operation == rhs.operation &&
+        lhs.helpText == rhs.helpText &&
         lhs.id == rhs.id &&
         lhs.shortcutNumber == rhs.shortcutNumber &&
         lhs.icon == rhs.icon &&
@@ -75,196 +83,10 @@ struct QuickAction: Identifiable, Equatable {
     static func actions(for text: String?, mode: CaptureMode = .standardOCR, config: QuickActionsConfig) -> [QuickAction] {
         guard config.isEnabled else { return [] }
         
-        switch mode {
-        case .standardOCR:
-            return standardOCRActions(for: text, config: config)
-        case .qrBarcode:
-            let isURL = text != nil && WebActionHelper.isURL(text!)
-            return [
-                QuickAction(
-                    id: "search_web",
-                    title: isURL ? "Open URL" : "Search Web",
-                    icon: isURL ? .system("safari") : .system("magnifyingglass"),
-                    shortcutNumber: 1,
-                    transform: { $0 }
-                )
-            ]
-        case .latex:
-            return [
-                QuickAction(
-                    id: "latex_wrap_dollar",
-                    title: "Wrap $...$",
-                    icon: .typography("$"),
-                    shortcutNumber: 1,
-                    transform: QuickActionTransforms.wrapDollar
-                )
-            ]
-        case .table:
-            return []
-        }
+        return ActionRegistry.shared.actions(context: ActionContext(text: text ?? "", mode: mode), config: config)
     }
-    
-    private static func standardOCRActions(for text: String?, config: QuickActionsConfig) -> [QuickAction] {
-        let isURL = text != nil && WebActionHelper.isURL(text!)
-        
-        // Base sub-actions pool for Change Case
-        let allCaseSubActions: [String: QuickAction] = [
-            "title_case": QuickAction(
-                id: "title_case",
-                title: "Title Case",
-                icon: .typography("Aa"),
-                shortcutNumber: 1,
-                transform: QuickActionTransforms.toTitleCase
-            ),
-            "uppercase": QuickAction(
-                id: "uppercase",
-                title: "UPPERCASE",
-                icon: .typography("AA"),
-                shortcutNumber: 2,
-                transform: QuickActionTransforms.toUppercase
-            ),
-            "lowercase": QuickAction(
-                id: "lowercase",
-                title: "lowercase",
-                icon: .typography("aa"),
-                shortcutNumber: 3,
-                transform: QuickActionTransforms.toLowercase
-            ),
-            "toggle_case": QuickAction(
-                id: "toggle_case",
-                title: "tOGGLE cASE",
-                icon: .typography("aA"),
-                shortcutNumber: 4,
-                transform: QuickActionTransforms.toToggleCase
-            ),
-            "sentence_case": QuickAction(
-                id: "sentence_case",
-                title: "Sentence case.",
-                icon: .system("text.alignleft"),
-                shortcutNumber: 5,
-                transform: QuickActionTransforms.toSentenceCase
-            )
-        ]
-        
-        // Ordered & filtered Change Case sub-actions
-        let caseOrder = config.subActionOrder["change_case"] ?? ["title_case", "uppercase", "lowercase", "toggle_case", "sentence_case"]
-        let disabledCaseIds = Set(config.disabledSubActionIds["change_case"] ?? [])
-        let activeCaseSubActions: [QuickAction] = caseOrder
-            .filter { !disabledCaseIds.contains($0) }
-            .compactMap { allCaseSubActions[$0] }
-            .enumerated()
-            .map { index, action in
-                QuickAction(
-                    id: action.id,
-                    title: action.title,
-                    icon: action.icon,
-                    shortcutNumber: index + 1,
-                    transform: action.transform
-                )
-            }
-        
-        // Translation sub-actions pool
-        var allTranslateSubActions: [String: QuickAction] = [:]
-        for lang in TranslationTargetLanguage.supportedLanguages {
-            allTranslateSubActions["translate_to_\(lang.code)"] = QuickAction(
-                id: "translate_to_\(lang.code)",
-                title: lang.name,
-                icon: .system("globe"),
-                shortcutNumber: 1,
-                transform: { $0 },
-                targetLanguageCode: lang.code
-            )
-        }
-        
-        let defaultSubOrder = ["translate_to_es", "translate_to_de", "translate_to_fr", "translate_to_ja", "translate_to_zh"]
-        var configuredTranslateOrder = config.subActionOrder["translate"] ?? defaultSubOrder
-        
-        // If configured order contains the default language, swap it with "en" or first available language not in order
-        if let defaultIndex = configuredTranslateOrder.firstIndex(of: "translate_to_\(config.defaultTranslateLanguage)") {
-            let candidateLangs = ["en", "es", "de", "fr", "ja", "zh"] + TranslationTargetLanguage.supportedLanguages.map(\.code)
-            if let replacement = candidateLangs.first(where: { $0 != config.defaultTranslateLanguage && !configuredTranslateOrder.contains("translate_to_\($0)") }) {
-                configuredTranslateOrder[defaultIndex] = "translate_to_\(replacement)"
-            } else {
-                configuredTranslateOrder.remove(at: defaultIndex)
-            }
-        }
-        
-        let disabledTranslateIds = Set(config.disabledSubActionIds["translate"] ?? [])
-        let activeTranslateSubActions: [QuickAction] = configuredTranslateOrder
-            .filter { !disabledTranslateIds.contains($0) && $0 != "translate_to_\(config.defaultTranslateLanguage)" }
-            .compactMap { allTranslateSubActions[$0] }
-            .enumerated()
-            .map { index, action in
-                QuickAction(
-                    id: action.id,
-                    title: action.title,
-                    icon: action.icon,
-                    shortcutNumber: index + 1,
-                    transform: action.transform,
-                    targetLanguageCode: action.targetLanguageCode
-                )
-            }
-        
-        // Map top-level actions
-        var activeActions: [QuickAction] = []
-        let disabledActionIds = Set(config.disabledActionIds)
-        
-        for actionId in config.actionOrder where !disabledActionIds.contains(actionId) {
-            let nextShortcutNumber = activeActions.count + 1
-            
-            switch actionId {
-            case "change_case":
-                activeActions.append(
-                    QuickAction(
-                        id: "change_case",
-                        title: "Change Case",
-                        icon: .system("textformat"),
-                        shortcutNumber: nextShortcutNumber,
-                        transform: QuickActionTransforms.toTitleCase,
-                        subActions: activeCaseSubActions.isEmpty ? nil : activeCaseSubActions
-                    )
-                )
-            case "join_lines":
-                activeActions.append(
-                    QuickAction(
-                        id: "join_lines",
-                        title: "Join Lines",
-                        icon: .system("text.line.2.summary"),
-                        shortcutNumber: nextShortcutNumber,
-                        transform: QuickActionTransforms.joinLines
-                    )
-                )
-            case "search_web":
-                activeActions.append(
-                    QuickAction(
-                        id: "search_web",
-                        title: isURL ? "Open URL" : "Search Web",
-                        icon: isURL ? .system("safari") : .system("magnifyingglass"),
-                        shortcutNumber: nextShortcutNumber,
-                        transform: { $0 }
-                    )
-                )
-            case "translate":
-                if #available(macOS 15.0, *) {
-                    activeActions.append(
-                        QuickAction(
-                            id: "translate",
-                            title: "Translate (to \(config.defaultTranslateLanguage).)",
-                            icon: .system("translate"),
-                            shortcutNumber: nextShortcutNumber,
-                            transform: { $0 },
-                            subActions: activeTranslateSubActions.isEmpty ? nil : activeTranslateSubActions,
-                            targetLanguageCode: config.defaultTranslateLanguage
-                        )
-                    )
-                }
-            default:
-                break
-            }
-        }
-        
-        return activeActions
-    }
+
+
 }
 
 // MARK: - Search Engine Configuration
@@ -345,30 +167,6 @@ struct TranslationTargetLanguage: Identifiable, Hashable {
     ]
 }
 
-// MARK: - Quick Actions Configuration Model
-
-/// Unified configuration for Quick Action ordering, visibility, and action-specific parameters.
-struct QuickActionsConfig: Codable, Equatable {
-    var isEnabled: Bool = true
-    var actionOrder: [String] = ["change_case", "join_lines", "search_web", "translate"]
-    var disabledActionIds: [String] = []
-    
-    // Sub-actions ordering & visibility
-    var subActionOrder: [String: [String]] = [
-        "change_case": ["title_case", "uppercase", "lowercase", "toggle_case", "sentence_case"],
-        "translate": ["translate_to_es", "translate_to_de", "translate_to_fr", "translate_to_ja", "translate_to_zh"]
-    ]
-    var disabledSubActionIds: [String: [String]] = [:]
-    
-    // Action-specific parameters
-    var searchEngine: SearchEngine = .google
-    var defaultTranslateLanguage: String = "en"
-    
-    // Ergonomics & Preferences
-    var showNumericShortcuts: Bool = true
-    var playHapticsOnHover: Bool = true
-}
-
 // MARK: - Action Metadata Registry
 
 /// Declarative metadata for built-in Quick Actions, utilized by the Settings configuration interface.
@@ -380,48 +178,13 @@ struct ActionMetadata: Identifiable, Equatable {
     let hasSubActions: Bool
     let hasParameters: Bool
     
+    var supportedModes: Set<CaptureMode> = [.standardOCR]
+    var parameters: [ActionParameter] = []
+
     static var allActions: [ActionMetadata] {
-        var actions: [ActionMetadata] = [
-            ActionMetadata(
-                id: "change_case",
-                title: "Change Case",
-                description: "Format text into Title Case, UPPERCASE, lowercase, and more.",
-                icon: .system("textformat"),
-                hasSubActions: true,
-                hasParameters: false
-            ),
-            ActionMetadata(
-                id: "join_lines",
-                title: "Join Lines",
-                description: "Merge wrapped text into a single paragraph without breaking true breaks.",
-                icon: .system("text.line.2.summary"),
-                hasSubActions: false,
-                hasParameters: false
-            ),
-            ActionMetadata(
-                id: "search_web",
-                title: "Search Web",
-                description: "Directly open detected web links or search selected text online.",
-                icon: .system("magnifyingglass"),
-                hasSubActions: false,
-                hasParameters: true
-            )
-        ]
-        if #available(macOS 15.0, *) {
-            actions.append(
-                ActionMetadata(
-                    id: "translate",
-                    title: "Translate",
-                    description: "Private neural translation powered by Apple Translation.",
-                    icon: .system("globe"),
-                    hasSubActions: true,
-                    hasParameters: true
-                )
-            )
-        }
-        return actions
+        ActionRegistry.shared.definitions.map(\.metadata)
     }
-    
+
     static let caseSubActionsMetadata: [ActionMetadata] = [
         ActionMetadata(id: "title_case", title: "Title Case", description: "Capitalize every principal word", icon: .typography("Aa"), hasSubActions: false, hasParameters: false),
         ActionMetadata(id: "uppercase", title: "UPPERCASE", description: "Convert all characters to uppercase", icon: .typography("AA"), hasSubActions: false, hasParameters: false),

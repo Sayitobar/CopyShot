@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-enum CaptureMode: String, Hashable {
+enum CaptureMode: String, Hashable, Codable {
     case standardOCR
     case qrBarcode
     case latex

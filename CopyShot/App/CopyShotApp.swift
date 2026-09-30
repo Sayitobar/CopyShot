@@ -90,6 +90,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if ProcessInfo.processInfo.arguments.contains("--ui-testing-show-settings") {
             DispatchQueue.main.async {
                 SettingsWindowManager.shared.showSettings()
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--ui-testing-qa-fixture") {
+                    let context = ActionContext(payload: .barcodes((0..<36).map {
+                        DetectedBarcode(payload: "Sample barcode \($0 + 1)", symbology: "QR")
+                    }))
+                    FeedbackManager.shared.presenter.showNotification(
+                        title: "Barcode Fixture", body: "36 synthetic barcode payloads", fullBody: context.text,
+                        accentColor: .adaptiveGreen, duration: 120, supportsQuickActions: true, actionContext: context
+                    )
+                }
+                #endif
             }
         }
         
@@ -101,6 +112,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     @objc func captureHotkeyDidFire() {
         debugPrint("--- Capture hotkey fired! Starting capture... ---")
         menuBarIconState = .capturing
+        FeedbackManager.shared.presenter.dismissNotification()
         captureManager.startCapture()
     }
 
@@ -145,7 +157,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 let subtitle = statusNote ?? "Recognized formula:"
                 presentation = ("LaTeX Copied", subtitle, formula, true, .latex)
             case .table(let table):
-                presentation = ("Table Copied", "Recognized cells:", table.tabSeparatedText, false, .table)
+                presentation = ("Table Copied", "Recognized cells:", table.tabSeparatedText, true, .table)
             }
             ClipboardManager.copyToClipboard(text: presentation.text)
             FeedbackManager.showNotification(
@@ -158,7 +170,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 soundName: "Funk",
                 targetScreen: screen,
                 supportsQuickActions: presentation.quickActions && SettingsManager.shared.quickActionsConfig.isEnabled,
-                captureMode: presentation.mode
+                captureMode: presentation.mode,
+                actionContext: ActionContext(payload: result)
             )
             setSuccessIcon()
         case .failed(let mode, let error):

@@ -3,6 +3,7 @@
 ## Fast unit suite
 
 ```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild test -scheme CopyShot -destination 'platform=macOS' \
   -only-testing:CopyShotTests -skip-testing:CopyShotTests/PipelineBenchmarkTests
 ```
@@ -21,11 +22,16 @@ The benchmark takes seven OCR and clipboard measurements after a warm-up and pri
 ## Settings UI smoke test
 
 ```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild test -scheme CopyShotUI -destination 'platform=macOS' \
-  -only-testing:CopyShotUITests/CopyShotUITests/testSettingsWindowOpensAndSwitchesTabs
+  -only-testing:CopyShotUITests
 ```
 
-The test launches the menu bar app with a test-only Settings argument, checks that the custom Settings window appears, and switches tabs. It runs separately from CI's unit suite because UI automation needs a logged-in desktop session.
+The suite launches the menu bar app with a test-only Settings argument, checks tab switching, then verifies all four Quick Actions modes in light and dark appearance. It checks disclosure scrolling, stable window height, and independent per-mode toggles. A synthetic 36-barcode HUD checks viewport clamping, scrolling, and optional numeric badges. Screenshots are retained in the test result bundle.
+
+UI tests use a unique `CopyShot.UITests.*` preferences suite through `COPYSHOT_UI_TEST_SETTINGS_SUITE`; they do not alter normal preferences. The debug-only barcode fixture does not capture the screen or copy to the clipboard. These tests run separately from CI's unit suite because UI automation needs a logged-in desktop session.
+
+Focused unit coverage includes schema migration/reconciliation, provider compatibility and availability, barcode indexing, table escaping and canonical chaining, LaTeX cycling/query encoding, stale execution/animation results, navigation failures, submenu keyboard selection, and measured layout helpers.
 
 ## Manual capture and HUD check
 
@@ -38,3 +44,8 @@ Run this when changing ScreenCaptureKit, overlay, HUD, or Settings layout code. 
 5. Capture a large slow-to-recognize image, then a small different one. Confirm the older OCR result does not replace the newer clipboard text or HUD.
 6. Hover the HUD and its Quick Action shelf, then move the pointer rapidly off the shelf. Confirm the shelf closes and clicks outside the visible HUD pass through.
 7. Open Settings in light and dark appearances. Switch all tabs and expand Quick Action settings; verify the window stays top-anchored and expanded content scrolls without clipping.
+8. In each Quick Actions mode, reorder and disable actions, then capture that mode. Check the HUD matches Settings and other modes retain their preferences. Reset and check shared preferences and all mode defaults.
+9. Capture multiple barcodes. Cross the parent/child hover bridge repeatedly, scroll a long payload submenu, and activate entries beyond nine by clicking. Verify each child opens/searches only its full payload, numeric keys act only in the open submenu, and Copy Raw Data preserves recognition order.
+10. Capture a table with ragged rows and quoted/multiline cells. Export CSV, Markdown, and TSV in sequence; verify every export uses the same canonical rows. Toggle the Markdown header parameter and compare the result.
+11. Start translation, then close the HUD or start a new capture before completion. Check the old result cannot change the clipboard or dismiss the newer HUD. Repeat while the old notification is fading out.
+12. Repeat shelf/submenu hover, long-menu scrolling, outside clicks, and focus restoration in light/dark appearance, on each display, and in full-screen Spaces. Automated Settings checks do not substitute for these physical capture and window-routing checks.

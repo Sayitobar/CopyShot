@@ -12,6 +12,7 @@ import SwiftUI
 struct ActionShelfView: View {
     let actions: [QuickAction]
     let accentColor: Color
+    var viewportHeight: CGFloat? = nil
     var activeSubmenuId: String? = nil
     var isSubShelfHovered: Bool = false
     let onActionSelected: (QuickAction) -> Void
@@ -39,29 +40,31 @@ struct ActionShelfView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             // Main Shelf column (stationary, locked to trailing edge)
-            VStack(alignment: .trailing, spacing: 6) {
-                ForEach(actions) { action in
-                    let isParent = activeSubmenuId == action.id
-                    let isDimmed = isSubShelfHovered && !isParent
-                    let isHovered = hoveredActionId == action.id
+            ShelfScrollingColumn(viewportHeight: viewportHeight, width: Self.pillWidth) {
+                VStack(alignment: .trailing, spacing: 6) {
+                    ForEach(actions) { action in
+                        let isParent = activeSubmenuId == action.id
+                        let isDimmed = isSubShelfHovered && !isParent
+                        let isHovered = hoveredActionId == action.id
                     
-                    ActionPillView(
-                        action: action,
-                        accentColor: accentColor,
-                        isSubmenuActive: isParent,
-                        isHovered: isHovered,
-                        onSelect: { onActionSelected(action) },
-                        onHover: { hovering in
-                            if hovering {
-                                hoveredActionId = action.id
-                            } else if hoveredActionId == action.id {
-                                hoveredActionId = nil
+                        ActionPillView(
+                            action: action,
+                            accentColor: accentColor,
+                            isSubmenuActive: isParent,
+                            isHovered: isHovered,
+                            onSelect: { onActionSelected(action) },
+                            onHover: { hovering in
+                                if hovering {
+                                    hoveredActionId = action.id
+                                } else if hoveredActionId == action.id {
+                                    hoveredActionId = nil
+                                }
+                                onMainPillHover?(action, hovering)
                             }
-                            onMainPillHover?(action, hovering)
-                        }
-                    )
-                    .opacity(isDimmed ? Theme.dimmedOpacity : Theme.activeOpacity)
-                    .animation(Theme.dimAnimation, value: isDimmed)
+                        )
+                        .opacity(isDimmed ? Theme.dimmedOpacity : Theme.activeOpacity)
+                        .animation(Theme.dimAnimation, value: isDimmed)
+                    }
                 }
             }
             .frame(width: Self.pillWidth)
@@ -95,6 +98,7 @@ struct ActionShelfView: View {
 struct ActionSubShelfView: View {
     let subActions: [QuickAction]
     let accentColor: Color
+    var viewportHeight: CGFloat? = nil
     var isMainShelfHovered: Bool = false
     let onActionSelected: (QuickAction) -> Void
     var onHoverChange: ((Bool) -> Void)? = nil
@@ -109,24 +113,26 @@ struct ActionSubShelfView: View {
     
     var body: some View {
         HStack(spacing: 0) {
-            VStack(alignment: .trailing, spacing: 6) {
-                ForEach(subActions) { subAction in
-                    let isHovered = hoveredSubActionId == subAction.id
-                    ActionPillView(
-                        action: subAction,
-                        accentColor: accentColor,
-                        isHovered: isHovered,
-                        onSelect: { onActionSelected(subAction) },
-                        onHover: { hovering in
-                            if hovering {
-                                hoveredSubActionId = subAction.id
-                            } else if hoveredSubActionId == subAction.id {
-                                hoveredSubActionId = nil
+            ShelfScrollingColumn(viewportHeight: viewportHeight, width: Self.pillWidth) {
+                VStack(alignment: .trailing, spacing: 6) {
+                    ForEach(subActions) { subAction in
+                        let isHovered = hoveredSubActionId == subAction.id
+                        ActionPillView(
+                            action: subAction,
+                            accentColor: accentColor,
+                            isHovered: isHovered,
+                            onSelect: { onActionSelected(subAction) },
+                            onHover: { hovering in
+                                if hovering {
+                                    hoveredSubActionId = subAction.id
+                                } else if hoveredSubActionId == subAction.id {
+                                    hoveredSubActionId = nil
+                                }
                             }
-                        }
-                    )
-                    .opacity(isMainShelfHovered ? ActionShelfView.Theme.dimmedOpacity : ActionShelfView.Theme.activeOpacity)
-                    .animation(ActionShelfView.Theme.dimAnimation, value: isMainShelfHovered)
+                        )
+                        .opacity(isMainShelfHovered ? ActionShelfView.Theme.dimmedOpacity : ActionShelfView.Theme.activeOpacity)
+                        .animation(ActionShelfView.Theme.dimAnimation, value: isMainShelfHovered)
+                    }
                 }
             }
             .frame(width: Self.pillWidth)
