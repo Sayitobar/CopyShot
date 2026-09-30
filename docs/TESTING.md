@@ -19,6 +19,18 @@ xcodebuild test -scheme CopyShot -destination 'platform=macOS' \
 
 The benchmark takes seven OCR and clipboard measurements after a warm-up and prints their median, minimum, and maximum. Compare runs on the same Mac and macOS release with the same Xcode configuration. Vision scheduling and thermal state vary, so these numbers are for investigation rather than a CI pass/fail limit.
 
+For cold/reused barcode and OCR requests, and reused versus recreated MFR sessions:
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+xcodebuild test -scheme CopyShot -destination 'platform=macOS' \
+  '-only-testing:CopyShotTests/PipelineBenchmarkTests/testRecognitionSessionLifetimeBenchmark()'
+```
+
+Install the local MFR model first to measure its session lifetime. The benchmark logs process physical footprint, three reused inferences, three inferences with recreated sessions, and eviction/reloading with a shortened idle timeout. Figures are diagnostic and depend on formula length, allocator state, and OS caches. Swift Testing function filters require the parentheses; confirm the specific test actually ran. Export result diagnostics with `xcrun xcresulttool export diagnostics` to read `StandardOutputAndStandardError.txt` when console output is absent from `xcodebuild`.
+
+The DEBUG live capture logger includes both whole seconds and fractional seconds when converting `Duration` to milliseconds. A regression test covers measurements longer than one second.
+
 ## Settings UI smoke test
 
 ```bash

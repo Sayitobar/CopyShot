@@ -36,21 +36,45 @@ enum FormulaRecognitionError: LocalizedError {
 }
 
 /// Runs only the Pix2Text MFR 1.5 encoder and decoder. No formula detector is involved.
-/// Sessions are created on the first LaTeX capture and reused on a serial worker queue.
+/// Sessions load lazily and remain cached until 60 seconds idle or memory pressure.
 final class FormulaRecognitionService: FormulaRecognizing {
     private let queue = DispatchQueue(label: "CopyShot.MFR", qos: .userInitiated)
-    private var loadedModel: LoadedModel?
+    private lazy var modelCache = IdleModelCache(queue: queue, idleTimeout: modelIdleTimeout, load: Self.loadModel)
+    private let modelIdleTimeout: TimeInterval
+    private let memoryPressure: DispatchSourceMemoryPressure
+
+    init(modelIdleTimeout: TimeInterval = 60) {
+        self.modelIdleTimeout = modelIdleTimeout
+        memoryPressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: queue)
+        memoryPressure.setEventHandler { [weak self] in
+            self?.modelCache.release()
+        }
+        memoryPressure.resume()
+    }
+
+    deinit { memoryPressure.cancel() }
 
     func recognize(_ image: CGImage, completion: @escaping (Result<FormulaResult, Error>) -> Void) {
         queue.async { [self] in
-            let result = Result { try recognizeSync(image) }
+            defer { modelCache.scheduleIdleRelease() }
+            let result = autoreleasepool { Result { try recognizeSync(image) } }
             DispatchQueue.main.async { completion(result) }
         }
     }
 
+    private static func loadModel() throws -> LoadedModel {
+        #if DEBUG
+        let loadStart = ContinuousClock.now
+        #endif
+        let model = try LoadedModel()
+        #if DEBUG
+        debugPrint(String(format: "[MFR 1.5] model load %.1f ms", CaptureBenchmarkTracker.milliseconds(ContinuousClock.now - loadStart)))
+        #endif
+        return model
+    }
+
     private func recognizeSync(_ image: CGImage) throws -> FormulaResult {
-        if loadedModel == nil { loadedModel = try LoadedModel() }
-        guard let model = loadedModel else { throw FormulaRecognitionError.invalidModel("Could not load sessions") }
+        let model = try modelCache.value()
         let start = CFAbsoluteTimeGetCurrent()
         let pixelValues = try Self.preprocess(image)
         let encoderInput = try Self.value(pixelValues, shape: [1, 3, 384, 384])
@@ -63,15 +87,18 @@ final class FormulaRecognitionService: FormulaRecognizing {
         var ids: [Int64] = [1] // MFR 1.5 decoder_start_token_id
         var reachedEndToken = false
         for _ in 0..<1024 {
-            let inputIDs = try Self.value(ids, shape: [1, NSNumber(value: ids.count)])
-            let outputs = try model.decoder.run(withInputs: [
-                "input_ids": inputIDs,
-                "encoder_hidden_states": hidden
-            ], outputNames: [model.decoderOutput], runOptions: nil)
-            guard let output = outputs[model.decoderOutput] else {
-                throw FormulaRecognitionError.invalidModel("Decoder output missing")
+            // Decoder tensors are temporary; drain their Objective-C autoreleases each token.
+            let next = try autoreleasepool {
+                let inputIDs = try Self.value(ids, shape: [1, NSNumber(value: ids.count)])
+                let outputs = try model.decoder.run(withInputs: [
+                    "input_ids": inputIDs,
+                    "encoder_hidden_states": hidden
+                ], outputNames: [model.decoderOutput], runOptions: nil)
+                guard let output = outputs[model.decoderOutput] else {
+                    throw FormulaRecognitionError.invalidModel("Decoder output missing")
+                }
+                return try Self.greedyLastToken(output)
             }
-            let next = try Self.greedyLastToken(output)
             if next == 2 {
                 reachedEndToken = true
                 break
@@ -126,16 +153,19 @@ final class FormulaRecognitionService: FormulaRecognizing {
         guard shape.count == 3, let vocabularySize = shape.last, vocabularySize > 0 else {
             throw FormulaRecognitionError.invalidModel("Unexpected decoder logits shape")
         }
-        let data = try output.tensorData() as Data
-        let scores = data.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
-        guard scores.count >= vocabularySize else {
+        let data = try output.tensorData()
+        let scoreCount = data.length / MemoryLayout<Float>.stride
+        guard scoreCount >= vocabularySize else {
             throw FormulaRecognitionError.invalidModel("Decoder logits are incomplete")
         }
-        let last = scores.suffix(vocabularySize)
-        guard let index = last.indices.max(by: { last[$0] < last[$1] }) else {
-            throw FormulaRecognitionError.invalidModel("Decoder logits are empty")
+        // Only the final position is needed. Avoid copying every position's vocabulary.
+        let scores = data.bytes.assumingMemoryBound(to: Float.self)
+        let offset = scoreCount - vocabularySize
+        var winner = 0
+        for index in 1..<vocabularySize where scores[offset + winner] < scores[offset + index] {
+            winner = index
         }
-        return Int64(last.distance(from: last.startIndex, to: index))
+        return Int64(winner)
     }
 
     static func preprocess(_ image: CGImage) throws -> [Float] {

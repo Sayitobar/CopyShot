@@ -51,9 +51,14 @@ final class CopyShotUITests: XCTestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 10))
         window.buttons["settings-tab-Quick Actions"].click()
         XCTAssertTrue(window.descendants(matching: .any)["qa-mode-switcher"].waitForExistence(timeout: 5))
+        let heading = window.descendants(matching: .any)["qa-catalog-heading"]
+        let selector = window.descendants(matching: .any)["qa-mode-switcher"]
+        XCTAssertTrue(heading.exists)
+        XCTAssertLessThan(heading.frame.maxY, selector.frame.minY)
         let initialHeight = window.frame.height
         for (mode, action) in [("qrBarcode", "copy_raw"), ("latex", "search_math"), ("table", "table_markdown"), ("standardOCR", "join_lines")] {
-            window.buttons["qa-mode-\(mode)"].click()
+            let segment = window.buttons["qa-mode-\(mode)"]
+            segment.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.1)).click()
             XCTAssertTrue(window.descendants(matching: .any)["qa-row-\(mode)-\(action)"].waitForExistence(timeout: 3))
             XCTAssertEqual(window.frame.height, initialHeight, accuracy: 1)
             let screenshot = XCTAttachment(screenshot: window.screenshot())
@@ -88,7 +93,13 @@ final class CopyShotUITests: XCTestCase {
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         first.hover()
         let submenu = app.descendants(matching: .any)["qa-submenu-content"]
-        XCTAssertLessThanOrEqual(submenu.frame.height, NSScreen.main?.visibleFrame.height ?? submenu.frame.height)
+        // Accessibility coordinates start at the primary screen's top-left. The runner's
+        // main screen can differ from the app's destination on a multi-display desktop.
+        let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
+        let hudCenter = CGPoint(x: hud.frame.midX, y: primaryTop - hud.frame.midY)
+        let destinationScreen = NSScreen.screens.first { $0.frame.contains(hudCenter) }
+        XCTAssertNotNil(destinationScreen)
+        XCTAssertLessThanOrEqual(submenu.frame.height, destinationScreen?.visibleFrame.height ?? submenu.frame.height)
         XCTAssertEqual(first.value as? String, "Shortcut 1")
         let last = app.buttons["qa-action-barcode_web_35"]
         XCTAssertEqual(last.value as? String, "No numeric shortcut")

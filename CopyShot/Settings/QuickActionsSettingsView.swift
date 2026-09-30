@@ -27,6 +27,7 @@ struct QuickActionsSettingsView: View {
     var baselineMode: CaptureMode? = nil
     @State private var selectedMode: CaptureMode = .standardOCR
     @State private var rowHeights: [String: CGFloat] = [:]
+    @Namespace private var modeHighlight
     private var mode: CaptureMode { baselineMode ?? selectedMode }
     private var catalog: [ActionCatalogEntry] { ActionRegistry.shared.catalog(for: mode, config: settings.quickActionsConfig) }
     private var scopedConfig: ModeActionConfiguration { settings.quickActionsConfig.modeConfiguration(for: mode) }
@@ -78,11 +79,11 @@ struct QuickActionsSettingsView: View {
                         .labelsHidden()
                 }
                 
-                modeSwitcher
-
                 // MARK: - Action Shelf Order & Visibility List
                 VStack(alignment: .leading, spacing: 8) {
-                    SettingsSectionHeader(title: "Actions for \(CaptureModeDescriptor.descriptor(for: mode)?.title ?? mode.rawValue)")
+                    SettingsSectionHeader(title: "Quick Actions")
+                        .accessibilityIdentifier("qa-catalog-heading")
+                    modeSwitcher
                     
                     let activeOrder = catalog.map { $0.metadata.id }
                     
@@ -224,13 +225,22 @@ struct QuickActionsSettingsView: View {
                         .font(.system(size: 11.5, weight: .medium))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(mode == descriptor.id ? Color.accentColor.opacity(0.15) : Color.clear))
+                        .contentShape(Rectangle())
+                        .background {
+                            if mode == descriptor.id {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.accentColor.opacity(0.15))
+                                    .matchedGeometryEffect(id: "selected-mode", in: modeHighlight, properties: .position)
+                                    .transition(.identity)
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("qa-mode-\(descriptor.id.rawValue)")
                 .accessibilityAddTraits(mode == descriptor.id ? .isSelected : [])
             }
         }
+        .animation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.35), value: mode)
         .padding(4)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
         .accessibilityElement(children: .contain)

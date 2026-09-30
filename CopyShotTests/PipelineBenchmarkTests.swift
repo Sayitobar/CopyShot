@@ -10,11 +10,71 @@ import Foundation
 import AppKit
 import CoreGraphics
 import CoreText
+import CoreImage.CIFilterBuiltins
+import Darwin
 @testable import CopyShot
 
 @Suite("Performance Benchmarks", .serialized)
 @MainActor
 struct PipelineBenchmarkTests {
+    @Test("Cold/reused Vision requests and MFR session lifetime")
+    func testRecognitionSessionLifetimeBenchmark() async throws {
+        func footprintMB() -> Double {
+            var info = task_vm_info_data_t()
+            var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+            let status = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+                }
+            }
+            return status == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+        }
+        let qr = CIFilter.qrCodeGenerator()
+        qr.message = Data("copyshot:benchmark".utf8)
+        let qrOutput = try #require(qr.outputImage)
+        let qrImage = try #require(CIContext().createCGImage(qrOutput.transformed(by: .init(scaleX: 12, y: 12)), from: qrOutput.extent.applying(.init(scaleX: 12, y: 12))))
+        for run in 1...3 {
+            let start = CFAbsoluteTimeGetCurrent()
+            let result = await withCheckedContinuation { continuation in
+                BarcodeRecognitionService.recognize(qrImage) { continuation.resume(returning: $0) }
+            }
+            #expect(try result.get().contains { $0.payload == "copyshot:benchmark" })
+            NSLog("[Recognition benchmark] Barcode %d: %.1f ms, footprint %.1f MiB", run, (CFAbsoluteTimeGetCurrent() - start) * 1_000, footprintMB())
+        }
+        let textImage = try #require(createRetinaCaptureImage(lines: ["x² + y² = z²"], pointSize: .init(width: 320, height: 70), fontSize: 32))
+        for run in 1...3 {
+            let start = CFAbsoluteTimeGetCurrent()
+            _ = try await runPipeline(on: textImage)
+            NSLog("[Recognition benchmark] OCR %d: %.1f ms, footprint %.1f MiB", run, (CFAbsoluteTimeGetCurrent() - start) * 1_000, footprintMB())
+        }
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CopyShot/MFR-1.5")
+        let path = ProcessInfo.processInfo.environment["COPYSHOT_MFR_MODEL_DIR"] ?? directory.path
+        guard FileManager.default.fileExists(atPath: path + "/encoder_model.onnx") else {
+            NSLog("[Recognition benchmark] MFR unavailable at %@", path)
+            return
+        }
+        setenv("COPYSHOT_MFR_MODEL_DIR", path, 1)
+        func measureFormula(_ service: FormulaRecognitionService, label: String) async throws {
+            let start = CFAbsoluteTimeGetCurrent()
+            let result = await withCheckedContinuation { continuation in
+                service.recognize(textImage) { continuation.resume(returning: $0) }
+            }
+            let formula = try result.get()
+            #expect(!formula.isEmpty)
+            NSLog("[Recognition benchmark] %@: %.1f ms, footprint %.1f MiB; %@", label, (CFAbsoluteTimeGetCurrent() - start) * 1_000, footprintMB(), formula.formula)
+        }
+        var cached: FormulaRecognitionService? = FormulaRecognitionService()
+        for run in 1...3 { try await measureFormula(cached!, label: "MFR reused \(run)") }
+        cached = nil
+        for run in 1...3 { try await measureFormula(FormulaRecognitionService(), label: "MFR recreated \(run)") }
+        NSLog("[Recognition benchmark] After releasing services: %.1f MiB", footprintMB())
+        let expiring = FormulaRecognitionService(modelIdleTimeout: 0.05)
+        try await measureFormula(expiring, label: "MFR idle cache first")
+        try await Task.sleep(for: .milliseconds(200))
+        NSLog("[Recognition benchmark] After model idle eviction: %.1f MiB", footprintMB())
+        try await measureFormula(expiring, label: "MFR idle cache reloaded")
+    }
     
     /// Helper to synthesize a realistic screen capture bitmap matching macOS Retina 2x display scaling.
     /// - Parameters:

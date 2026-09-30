@@ -18,6 +18,11 @@ final class CaptureBenchmarkTracker: @unchecked Sendable {
     private var ocrCompletedTime: ContinuousClock.Instant?
     
     private init() {}
+
+    static func milliseconds(_ duration: Duration) -> Double {
+        let components = duration.components
+        return Double(components.seconds) * 1_000 + Double(components.attoseconds) / 1_000_000_000_000_000
+    }
     
     func recordMouseRelease() {
         lock.lock()
@@ -55,10 +60,10 @@ final class CaptureBenchmarkTracker: @unchecked Sendable {
         ocrCompletedTime = nil
         lock.unlock()
         
-        let captureMs = Double((capture - release).components.attoseconds) / 1_000_000_000_000_000.0
-        let ocrMs = Double((ocr - capture).components.attoseconds) / 1_000_000_000_000_000.0
-        let hudMs = Double((hudTime - ocr).components.attoseconds) / 1_000_000_000_000_000.0
-        let totalMs = Double((hudTime - release).components.attoseconds) / 1_000_000_000_000_000.0
+        let captureMs = Self.milliseconds(capture - release)
+        let ocrMs = Self.milliseconds(ocr - capture)
+        let hudMs = Self.milliseconds(hudTime - ocr)
+        let totalMs = Self.milliseconds(hudTime - release)
         
         let output = String(
             format: """
