@@ -37,6 +37,8 @@ struct SettingsManagerTests {
         settings.usesLanguageCorrection = false
         settings.textPreviewLimit = 12
         settings.quickActionsConfig.searchEngine = .kagi
+        settings.prettifyLatex = true
+        settings.fixLatexSyntax = false
 
         let reloaded = SettingsManager(defaults: defaults)
         #expect(reloaded.recognitionLevel == .fast)
@@ -44,6 +46,8 @@ struct SettingsManagerTests {
         #expect(!reloaded.usesLanguageCorrection)
         #expect(reloaded.textPreviewLimit == 12)
         #expect(reloaded.quickActionsConfig.searchEngine == .kagi)
+        #expect(reloaded.prettifyLatex == true)
+        #expect(reloaded.fixLatexSyntax == false)
     }
     
     @Test("HotkeyConfig Codable encoding and decoding round-trip")
@@ -89,4 +93,14 @@ struct SettingsManagerTests {
         #expect(AppAppearance.system.colorScheme == nil)
     }
     
+    @Test("LaTeX default settings are enabled")
+    func testLatexDefaultSettings() throws {
+        let suite = "CopyShotTests.latexDefaults.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        
+        let settings = SettingsManager(defaults: defaults)
+        #expect(settings.prettifyLatex == true)
+        #expect(settings.fixLatexSyntax == true)
+    }
 }

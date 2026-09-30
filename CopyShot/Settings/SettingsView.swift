@@ -8,7 +8,7 @@ import Sparkle
 
 enum SettingsTab: String, CaseIterable {
     case general = "General"
-    case capture = "OCR & Capture"
+    case capture = "Capture"
     case notifications = "Notifications"
     case quickActions = "Quick Actions"
     case about = "About"
@@ -449,7 +449,7 @@ struct SettingsView: View {
         )
         .preferredColorScheme(settings.appearance.colorScheme)
         .id(settings.appearance)
-        .onChange(of: settings.appearance) { _ in
+        .onChange(of: settings.appearance) {
             SettingsWindowManager.shared.updateAppearance()
         }
         .onPreferenceChange(SettingsHeaderHeightKey.self) { newHeaderHeight in
@@ -654,6 +654,21 @@ struct GeneralSettingsView: View {
     }
 }
 
+// MARK: - Section Header for Settings Subsections
+struct SettingsSectionHeader: View {
+    let title: String
+    
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 4)
+            Spacer()
+        }
+    }
+}
+
 // MARK: - Capture Settings
 struct CaptureSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
@@ -663,7 +678,7 @@ struct CaptureSettingsView: View {
     }
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             SettingsRow(label: "Capture Screenshot", tooltip: "Global hotkey to trigger screen capture.", zIndexValue: 11) {
                 VStack(alignment: .leading, spacing: 6) {
                     HotkeyField(hotkey: $settings.captureHotkey, placeholder: "Click to set")
@@ -679,75 +694,101 @@ struct CaptureSettingsView: View {
                 }
             }
             
-            SettingsRow(label: "Recognition Level", tooltip: "Fast: Character detection & small ML model.\nAccurate: Neural network for human-like string & line recognition.", zIndexValue: 10) {
-                Picker("", selection: $settings.recognitionLevel) {
-                    ForEach(RecognitionLevel.allCases) { level in
-                        Text(level.description).tag(level)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 200) // Fixed to be consistent width
-            }
-            
-            SettingsRow(label: "Language Correction", tooltip: "Applies Natural Language Processing (NLP) to minimize misreadings.\nNote: Not supported for Chinese. Disable this for code or technical symbols.", zIndexValue: 9) {
-                Toggle("", isOn: $settings.usesLanguageCorrection)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-            }
-            
-            SettingsRow(label: "Add Language", tooltip: "Add languages to improve recognition accuracy for mixed content.", zIndexValue: 8) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Menu {
-                        ForEach(availableLanguages, id: \.self) { language in
-                            Button(action: {
-                                addLanguage(language)
-                            }) {
-                                Text(Locale.current.localizedString(forIdentifier: language) ?? language)
+            // Section: Vision OCR
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsSectionHeader(title: "OCR (Text)")
+                
+                VStack(spacing: 20) {
+                    SettingsRow(label: "Recognition Level", tooltip: "Fast: Character detection & small ML model.\nAccurate: Neural network for human-like string & line recognition.", zIndexValue: 10) {
+                        Picker("", selection: $settings.recognitionLevel) {
+                            ForEach(RecognitionLevel.allCases) { level in
+                                Text(level.description).tag(level)
                             }
                         }
-                    } label: {
-                        HStack {
-                            Text(availableLanguages.isEmpty ? "All added" : "Add Language...")
-                                .foregroundStyle(availableLanguages.isEmpty ? .secondary : .primary)
-                                .font(.system(size: 12))
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 10))
-                        }
-                        .frame(width: 200) // Match width of picker
-                        .padding(.vertical, 4)
-                        .background(Color(.controlBackgroundColor))
-                        .clipShape(.rect(cornerRadius: 5))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                        )
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(width: 200) // Fixed to be consistent width
                     }
-                    .buttonStyle(.plain)
-                    .disabled(availableLanguages.isEmpty)
                     
-                    if !settings.recognitionLanguages.isEmpty {
-                        // Collective Box for added languages
-                        ScrollView(.vertical, showsIndicators: settings.recognitionLanguages.count > 3) {
-                            VStack(spacing: 0) {
-                                ForEach(Array(settings.recognitionLanguages.enumerated()), id: \.element) { index, language in
-                                    LanguageRow(
-                                        language: language,
-                                        canRemove: settings.recognitionLanguages.count > 1,
-                                        isLast: index == settings.recognitionLanguages.count - 1
-                                    ) {
-                                        removeLanguage(language)
+                    SettingsRow(label: "Language Correction", tooltip: "Applies Natural Language Processing (NLP) to minimize misreadings.\nNote: Not supported for Chinese. Disable this for code or technical symbols.", zIndexValue: 9) {
+                        Toggle("", isOn: $settings.usesLanguageCorrection)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+                    
+                    SettingsRow(label: "Add Language", tooltip: "Add languages to improve recognition accuracy for mixed content.", zIndexValue: 8) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Menu {
+                                ForEach(availableLanguages, id: \.self) { language in
+                                    Button(action: {
+                                        addLanguage(language)
+                                    }) {
+                                        Text(Locale.current.localizedString(forIdentifier: language) ?? language)
                                     }
                                 }
+                            } label: {
+                                HStack {
+                                    Text(availableLanguages.isEmpty ? "All added" : "Add Language...")
+                                        .foregroundStyle(availableLanguages.isEmpty ? .secondary : .primary)
+                                        .font(.system(size: 12))
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 10))
+                                }
+                                .frame(width: 200) // Match width of picker
+                                .padding(.vertical, 4)
+                                .background(Color(.controlBackgroundColor))
+                                .clipShape(.rect(cornerRadius: 5))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(availableLanguages.isEmpty)
+                            
+                            if !settings.recognitionLanguages.isEmpty {
+                                // Collective Box for added languages
+                                ScrollView(.vertical, showsIndicators: settings.recognitionLanguages.count > 3) {
+                                    VStack(spacing: 0) {
+                                        ForEach(Array(settings.recognitionLanguages.enumerated()), id: \.element) { index, language in
+                                            LanguageRow(
+                                                language: language,
+                                                canRemove: settings.recognitionLanguages.count > 1,
+                                                isLast: index == settings.recognitionLanguages.count - 1
+                                            ) {
+                                                removeLanguage(language)
+                                            }
+                                        }
+                                    }
+                                }
+                                .frame(width: 200) // Match width of container
+                                .frame(maxHeight: 110)
+                                .background(Color(.controlBackgroundColor).opacity(0.5))
+                                .clipShape(.rect(cornerRadius: 6))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                                )
                             }
                         }
-                        .frame(width: 200) // Match width of container
-                        .frame(maxHeight: 110)
-                        .background(Color(.controlBackgroundColor).opacity(0.5))
-                        .clipShape(.rect(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                        )
+                    }
+                }
+            }
+            
+            // Section: LaTeX Formulas
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsSectionHeader(title: "LaTeX (Formula Recognition)")
+                
+                VStack(spacing: 20) {
+                    SettingsRow(label: "Prettify Syntax", tooltip: "Compact redundant spaces around braces, operators, and subscripts in LaTeX output.", zIndexValue: 7) {
+                        Toggle("", isOn: $settings.prettifyLatex)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+                    
+                    SettingsRow(label: "Fix Syntax", tooltip: "Automatically fix common syntax issues (unclosed braces, terminal delimiters, and unescaped %). Displays \"Fixed broken syntax\" in notification when triggered.", zIndexValue: 6) {
+                        Toggle("", isOn: $settings.fixLatexSyntax)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
                     }
                 }
             }

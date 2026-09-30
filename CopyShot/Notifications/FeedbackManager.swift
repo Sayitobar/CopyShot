@@ -28,7 +28,8 @@ class FeedbackManager {
         accentColor: Color,
         soundName: String? = nil,
         targetScreen: NSScreen? = nil,
-        supportsQuickActions: Bool = false
+        supportsQuickActions: Bool = false,
+        captureMode: CaptureMode = .standardOCR
     ) {
         shared.presenter.showNotification(
             title: title,
@@ -39,7 +40,8 @@ class FeedbackManager {
             customIcon: customIcon,
             accentColor: accentColor,
             targetScreen: targetScreen,
-            supportsQuickActions: supportsQuickActions
+            supportsQuickActions: supportsQuickActions,
+            captureMode: captureMode
         )
         
         // Play sound directly

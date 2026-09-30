@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		04867A882F55091500BC5CAE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 04867A872F55091500BC5CAE /* Sparkle */; };
+		A1F0C0010000000000000001 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = A1F0C0010000000000000003 /* onnxruntime */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				04867A882F55091500BC5CAE /* Sparkle in Frameworks */,
+				A1F0C0010000000000000001 /* onnxruntime in Frameworks */,
 			);
 		};
 		0428F2932DFDBDA500CFF1DB /* Frameworks */ = {
@@ -123,6 +125,7 @@
 			name = CopyShot;
 			packageProductDependencies = (
 				04867A872F55091500BC5CAE /* Sparkle */,
+				A1F0C0010000000000000003 /* onnxruntime */,
 			);
 			productName = CopyShot;
 			productReference = 0428F2882DFDBDA300CFF1DB /* CopyShot.app */;
@@ -204,6 +207,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				04867A862F55091500BC5CAE /* XCRemoteSwiftPackageReference "Sparkle" */,
+				A1F0C0010000000000000002 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 0428F2892DFDBDA300CFF1DB /* Products */;
@@ -589,6 +593,14 @@
 				minimumVersion = 2.9.0;
 			};
 		};
+		A1F0C0010000000000000002 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.24.2;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -596,6 +608,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 04867A862F55091500BC5CAE /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		A1F0C0010000000000000003 /* onnxruntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1F0C0010000000000000002 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+			productName = onnxruntime;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

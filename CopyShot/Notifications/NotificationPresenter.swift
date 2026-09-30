@@ -76,6 +76,7 @@ class NotificationPresenter: ObservableObject {
     var targetScreen: NSScreen? = nil
     var supportsQuickActions: Bool = false
     var quickActions: [QuickAction] = QuickAction.defaultActions
+    var currentCaptureMode: CaptureMode = .standardOCR
     
     private var currentRawText: String? = nil
     private var dismissTimer: AnyCancellable?
@@ -175,16 +176,18 @@ class NotificationPresenter: ObservableObject {
         targetScreen: NSScreen? = nil,
         duration: TimeInterval = 3.0,
         supportsQuickActions: Bool = false,
-        quickActions: [QuickAction]? = nil
+        quickActions: [QuickAction]? = nil,
+        captureMode: CaptureMode = .standardOCR
     ) {
         // Dismiss any existing notification first
         dismissNotification()
         
         let config = configProvider()
         self.targetScreen = targetScreen
+        self.currentCaptureMode = captureMode
         self.supportsQuickActions = supportsQuickActions && config.isEnabled
         self.currentRawText = fullBody ?? body
-        self.quickActions = quickActions ?? QuickAction.actions(for: self.currentRawText, config: config)
+        self.quickActions = quickActions ?? QuickAction.actions(for: self.currentRawText, mode: captureMode, config: config)
         self.notificationDuration = max(0, duration)
         self.isShelfOpen = false
         self.activeSubmenu = nil
@@ -782,7 +785,8 @@ class NotificationPresenter: ObservableObject {
                             accentColor: .adaptiveGreen,
                             soundName: "Funk",
                             targetScreen: self.targetScreen,
-                            supportsQuickActions: true
+                            supportsQuickActions: true,
+                            captureMode: self.currentCaptureMode
                         )
                         
                     case .failure(let error):
@@ -834,7 +838,8 @@ class NotificationPresenter: ObservableObject {
                 accentColor: .adaptiveGreen,
                 soundName: "Funk",
                 targetScreen: self.targetScreen,
-                supportsQuickActions: true
+                supportsQuickActions: true,
+                captureMode: self.currentCaptureMode
             )
         }
     }

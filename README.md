@@ -45,6 +45,20 @@
 
 *\*Note: On-device translation requires macOS 15.0 (Sequoia) or later. The first time a new language set is used, macOS will prompt you once to download Apple's on-device neural language set directly onto your Mac. Other Quick Actions are fully supported on macOS 14 (Sonoma)+.*
 
+### Capture modes (POC)
+
+During a capture, right-click and drag through the radial menu to choose OCR, QR/barcode, LaTeX, or table recognition; release to select, then drag a region with the left mouse button.
+
+- **Standard OCR**: Fast, local text recognition using Apple's Vision framework (`VNRecognizeTextRequest`) with smart reading-order assembly.
+- **QR & Barcodes**: Supports all barcode and 2D matrix symbologies natively detected by Apple's `VNDetectBarcodesRequest` on your macOS version (e.g. QR, Micro QR, DataMatrix, Aztec, PDF417, EAN, UPC, Code 128/39/93, Codabar, GS1 DataBar). Formats not supported by Apple Vision (such as postal codes, Code-11, or Pharmacode) are not detected.
+- **Table Recognition**:
+  - *How it works*: Deterministic geometric clustering that groups Vision OCR text bounding boxes into aligned rows and columns.
+  - *Output format*: Tab-Separated Values (TSV) copied to clipboard, ready to paste directly into Excel, Numbers, Google Sheets, or Markdown.
+  - *Capabilities & Limitations*: Accurately captures single-line grid data (with or without visible borders, including sparse/empty cells). Wrapped multi-line text inside a single cell or merged cells (`rowspan`/`colspan`) are partitioned into separate rows/columns.
+- **LaTeX Formulas**:
+  - Scales the raw cropped equation capture onto a $384 \times 384$ canvas and decodes it locally via [Pix2Text MFR 1.5](https://huggingface.co/breezedeus/pix2text-mfr-1.5) using ONNX Runtime (up to 1,024 tokens).
+  - *Output format*: Raw LaTeX math string. Requires [MFR 1.5 setup](docs/MFR_SETUP.md).
+
 ---
 
 ## Architecture & How It Works
@@ -78,7 +92,7 @@ CopyShot runs as an ultra-lightweight menu bar utility (`LSUIElement`) with a di
 ---
 
 ## Privacy
-CopyShot respects your privacy. All OCR processing happens locally on your device using Apple's Vision framework. The app **does not access any of your personal files**. Your captured images and extracted text remain entirely on your Mac.
+CopyShot respects your privacy. Capture recognition runs locally using Apple's Vision framework or the installed MFR 1.5 ONNX model. The app **does not access any of your personal files**. Your captured images and extracted text remain entirely on your Mac.
 
 *Network Note: Since v1.1, CopyShot requires outbound internet access exclusively and only to check for application updates securely via the Sparkle framework.*
 

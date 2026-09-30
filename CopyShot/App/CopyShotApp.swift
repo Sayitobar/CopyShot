@@ -16,16 +16,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     
     // The manager is now created on the main actor, which is safe.
     private let captureManager = ScreenCaptureManager()
+    private lazy var formulaService: FormulaRecognizing = FormulaRecognitionService()
 
     private lazy var capturePipeline = CapturePipeline(
         isLatest: { [weak self] requestID in
             self?.captureManager.isLatestCapture(requestID) ?? false
         },
-        recognize: { image, completion in
-            OCRService.performOCR(on: image) { result in
-                Task { @MainActor in completion(result) }
+        recognizers: [
+            .standardOCR: { image, completion in
+                OCRService.performOCR(on: image) { result in
+                    Task { @MainActor in
+                        switch result {
+                        case .success(let text): completion(.success(.standardText(text)))
+                        case .failure(let error): completion(.failure(error))
+                        }
+                    }
+                }
+            },
+            .qrBarcode: { image, completion in
+                BarcodeRecognitionService.recognize(image) { result in
+                    Task { @MainActor in completion(result.map(CaptureResult.barcodes)) }
+                }
+            },
+            .latex: { [weak self] image, completion in
+                self?.formulaService.recognize(image) { result in
+                    Task { @MainActor in
+                        completion(result.map {
+                            CaptureResult.latex(
+                                formula: $0.formula,
+                                statusNote: $0.wasSyntaxFixed ? "Fixed broken syntax" : nil
+                            )
+                        })
+                    }
+                }
+            },
+            .table: { image, completion in
+                TableRecognitionService.recognize(image) { result in
+                    Task { @MainActor in completion(result.map(CaptureResult.table)) }
+                }
             }
-        },
+        ],
         deliver: { [weak self] outcome, screen in
             self?.presentCaptureOutcome(outcome, screen: screen)
         }
@@ -39,8 +69,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // 1. Set up the completion handler ONCE.
         // This is now safe because both the AppDelegate and the captureManager
         // are on the Main Actor.
-        captureManager.onCaptureComplete = { [weak self] image, screen, requestID in
-            self?.capturePipeline.completeCapture(image: image, screen: screen, requestID: requestID)
+        captureManager.onCaptureComplete = { [weak self] image, screen, mode, requestID in
+            self?.capturePipeline.completeCapture(image: image, screen: screen, mode: mode, requestID: requestID)
         }
         
         // 2. Register and listen for hotkeys.
@@ -86,42 +116,57 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 targetScreen: screen
             )
             resetIcon()
-        case .noText:
+        case .noContent(let mode):
             #if DEBUG
             CaptureBenchmarkTracker.shared.recordOCRCompleted()
             #endif
             FeedbackManager.showNotification(
-                title: "No Text Found",
-                body: "The selected area did not contain any recognizable text.",
+                title: mode == .standardOCR ? "No Text Found" : mode == .qrBarcode ? "No Barcode Found" : "No Content Found",
+                body: mode == .standardOCR
+                    ? "The selected area did not contain any recognizable text."
+                    : "The selected area did not contain recognizable \(CaptureModeDescriptor.descriptor(for: mode)?.title ?? "content").",
                 iconName: "questionmark.circle.fill",
                 accentColor: .adaptiveBlue,
                 soundName: "Bottle",
                 targetScreen: screen
             )
             resetIcon()
-        case .text(let recognizedText):
+        case .result(let result):
             #if DEBUG
             CaptureBenchmarkTracker.shared.recordOCRCompleted()
             #endif
-            ClipboardManager.copyToClipboard(text: recognizedText)
+            let presentation: (title: String, subtitle: String, text: String, quickActions: Bool, mode: CaptureMode)
+            switch result {
+            case .standardText(let text):
+                presentation = ("Text Copied", "Recognized text:", text, true, .standardOCR)
+            case .barcodes(let codes):
+                presentation = ("Barcode Copied", "Detected code:", codes.map(\.payload).joined(separator: "\n"), true, .qrBarcode)
+            case .latex(let formula, let statusNote):
+                let subtitle = statusNote ?? "Recognized formula:"
+                presentation = ("LaTeX Copied", subtitle, formula, true, .latex)
+            case .table(let table):
+                presentation = ("Table Copied", "Recognized cells:", table.tabSeparatedText, false, .table)
+            }
+            ClipboardManager.copyToClipboard(text: presentation.text)
             FeedbackManager.showNotification(
-                title: "Text Copied",
-                subtitle: "Recognized text:",
-                body: TextPreview.format(recognizedText, limit: SettingsManager.shared.textPreviewLimit),
-                fullBody: recognizedText,
+                title: presentation.title,
+                subtitle: presentation.subtitle,
+                body: TextPreview.format(presentation.text, limit: SettingsManager.shared.textPreviewLimit),
+                fullBody: presentation.text,
                 iconName: "checkmark.circle.fill",
                 accentColor: .adaptiveGreen,
                 soundName: "Funk",
                 targetScreen: screen,
-                supportsQuickActions: SettingsManager.shared.quickActionsConfig.isEnabled
+                supportsQuickActions: presentation.quickActions && SettingsManager.shared.quickActionsConfig.isEnabled,
+                captureMode: presentation.mode
             )
             setSuccessIcon()
-        case .failed(let error):
+        case .failed(let mode, let error):
             #if DEBUG
             CaptureBenchmarkTracker.shared.recordOCRCompleted()
             #endif
             FeedbackManager.showNotification(
-                title: "OCR Failed",
+                title: "\(CaptureModeDescriptor.descriptor(for: mode)?.title ?? "Capture") Failed",
                 body: error.localizedDescription,
                 iconName: "exclamationmark.triangle.fill",
                 accentColor: .adaptiveOrange,

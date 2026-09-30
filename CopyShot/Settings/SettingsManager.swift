@@ -38,6 +38,8 @@ enum SettingsKeys {
     static let appAppearance = "appAppearance"
     static let playNotificationSound = "playNotificationSound"
     static let quickActionsConfig = "quickActionsConfig"
+    static let prettifyLatex = "prettifyLatex"
+    static let fixLatexSyntax = "fixLatexSyntax"
 }
 
 // Using an enum for the recognition level makes our code safer and clearer.
@@ -156,6 +158,20 @@ class SettingsManager: ObservableObject {
         }
     }
     
+    /// Prettify / compact spacing in recognized LaTeX formulas
+    @Published var prettifyLatex: Bool {
+        didSet {
+            defaults.set(prettifyLatex, forKey: SettingsKeys.prettifyLatex)
+        }
+    }
+    
+    /// Automatically repair common syntax errors (unbalanced braces, terminal artifacts) in LaTeX formulas
+    @Published var fixLatexSyntax: Bool {
+        didSet {
+            defaults.set(fixLatexSyntax, forKey: SettingsKeys.fixLatexSyntax)
+        }
+    }
+    
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         // MARK: - Initial Settings Check & Assignment
@@ -219,6 +235,10 @@ class SettingsManager: ObservableObject {
         } else {
             self.launchAtLogin = false
         }
+        
+        // LaTeX Settings (Default: True)
+        self.prettifyLatex = defaults.object(forKey: SettingsKeys.prettifyLatex) as? Bool ?? true
+        self.fixLatexSyntax = defaults.object(forKey: SettingsKeys.fixLatexSyntax) as? Bool ?? true
     }
 
     static func previewLimit(from defaults: UserDefaults) -> Int {

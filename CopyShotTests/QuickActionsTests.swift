@@ -421,4 +421,50 @@ final class QuickActionsTests: XCTestCase {
         )
         XCTAssertFalse(viewNotHovered.isMainShelfHovered)
     }
+    
+    func testWrapDollarCyclesProperly() {
+        let raw = "x^2 + y^2 = z^2"
+        let wrappedSingle = QuickActionTransforms.wrapDollar(raw)
+        XCTAssertEqual(wrappedSingle, "$x^2 + y^2 = z^2$")
+        
+        let wrappedDouble = QuickActionTransforms.wrapDollar(wrappedSingle)
+        XCTAssertEqual(wrappedDouble, "$$x^2 + y^2 = z^2$$")
+        
+        let unwrapped = QuickActionTransforms.wrapDollar(wrappedDouble)
+        XCTAssertEqual(unwrapped, raw)
+    }
+    
+    func testModeSpecificQuickActions() {
+        let config = QuickActionsConfig()
+        
+        // Standard OCR
+        let ocrActions = QuickAction.actions(for: "Hello World", mode: .standardOCR, config: config)
+        XCTAssertTrue(ocrActions.contains(where: { $0.id == "change_case" }))
+        XCTAssertTrue(ocrActions.contains(where: { $0.id == "join_lines" }))
+        
+        // QR / Barcode
+        let qrActionsURL = QuickAction.actions(for: "https://apple.com", mode: .qrBarcode, config: config)
+        XCTAssertEqual(qrActionsURL.count, 1)
+        XCTAssertEqual(qrActionsURL.first?.id, "search_web")
+        XCTAssertEqual(qrActionsURL.first?.title, "Open URL")
+        XCTAssertEqual(qrActionsURL.first?.shortcutNumber, 1)
+        
+        let qrActionsText = QuickAction.actions(for: "1234567890", mode: .qrBarcode, config: config)
+        XCTAssertEqual(qrActionsText.count, 1)
+        XCTAssertEqual(qrActionsText.first?.id, "search_web")
+        XCTAssertEqual(qrActionsText.first?.title, "Search Web")
+        XCTAssertEqual(qrActionsText.first?.shortcutNumber, 1)
+        
+        // LaTeX
+        let latexActions = QuickAction.actions(for: "E = mc^2", mode: .latex, config: config)
+        XCTAssertEqual(latexActions.count, 1)
+        XCTAssertEqual(latexActions.first?.id, "latex_wrap_dollar")
+        XCTAssertEqual(latexActions.first?.title, "Wrap $...$")
+        XCTAssertEqual(latexActions.first?.shortcutNumber, 1)
+        
+        // Table
+        let tableActions = QuickAction.actions(for: "A\tB\nC\tD", mode: .table, config: config)
+        XCTAssertEqual(tableActions.count, 0)
+    }
 }
+

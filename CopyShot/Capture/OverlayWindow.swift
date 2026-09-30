@@ -39,7 +39,20 @@ class OverlayWindow: NSWindow {
 
 // Custom HostingView that accepts first mouse to prevent click-through/stutter
 class ActionHostingView<Content: View>: NSHostingView<Content> {
+    var onRightMouseDown: ((CGPoint, CGSize) -> Void)?
+    var onRightMouseDragged: ((CGPoint) -> Void)?
+    var onRightMouseUp: ((CGPoint) -> Void)?
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
     }
+
+    private func localPoint(for event: NSEvent) -> CGPoint {
+        let point = convert(event.locationInWindow, from: nil)
+        return CGPoint(x: point.x, y: isFlipped ? point.y : bounds.height - point.y)
+    }
+
+    override func rightMouseDown(with event: NSEvent) { onRightMouseDown?(localPoint(for: event), bounds.size) }
+    override func rightMouseDragged(with event: NSEvent) { onRightMouseDragged?(localPoint(for: event)) }
+    override func rightMouseUp(with event: NSEvent) { onRightMouseUp?(localPoint(for: event)) }
 }

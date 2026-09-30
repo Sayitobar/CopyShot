@@ -127,7 +127,7 @@ struct CustomNotificationView: View {
                 onHeightChange?(newHeight)
             }
         }
-        .onChange(of: isExpanded) { expanded in
+        .onChange(of: isExpanded) { _, expanded in
             let targetHeight = expanded ? expandedHeight : compactedHeight
             if targetHeight > 0 {
                 onHeightChange?(targetHeight)

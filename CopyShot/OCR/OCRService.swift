@@ -23,6 +23,16 @@ class OCRService {
     }
     
     static func performOCR(on image: CGImage, completion: @escaping (OCRResult) -> Void) {
+        performOCRSegments(on: image) { result in
+            switch result {
+            case .success(let segments): completion(.success(assembleText(from: segments)))
+            case .failure(let error): completion(.failure(error))
+            }
+        }
+    }
+
+    static func performOCRSegments(on image: CGImage,
+                                   completion: @escaping (Result<[TextSegment], Error>) -> Void) {
         let settings = SettingsManager.shared
         let recognitionLevel: VNRequestTextRecognitionLevel = settings.recognitionLevel == .accurate ? .accurate : .fast
         let usesLanguageCorrection = settings.usesLanguageCorrection
@@ -47,8 +57,7 @@ class OCRService {
                     guard let candidate = observation.topCandidates(1).first else { return nil }
                     return TextSegment(text: candidate.string, bounds: observation.boundingBox)
                 }
-                let recognizedText = assembleText(from: segments)
-                DispatchQueue.main.async { completion(.success(recognizedText)) }
+                DispatchQueue.main.async { completion(.success(segments)) }
             } catch {
                 debugPrint("OCR Request Handler Error: \(error.localizedDescription)")
                 DispatchQueue.main.async { completion(.failure(error)) }

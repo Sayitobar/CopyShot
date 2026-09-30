@@ -54,12 +54,13 @@ class ScreenCaptureManager: NSObject {
     struct CaptureSelection {
         let rect: CGRect
         let screen: NSScreen
+        let mode: CaptureMode
     }
 
     private var selectedRegion: CaptureSelection?
     private var streamContent: SCShareableContent?
     private var previousApp: NSRunningApplication?
-    var onCaptureComplete: ((CGImage?, NSScreen?, UUID) -> Void)?
+    var onCaptureComplete: ((CGImage?, NSScreen?, CaptureMode, UUID) -> Void)?
 
     func isLatestCapture(_ requestID: UUID) -> Bool {
         requestState.isLatest(requestID)
@@ -97,7 +98,7 @@ class ScreenCaptureManager: NSObject {
             complete(with: nil, for: requestID)
             return
         }
-        let onCaptureAction: (CGRect, NSScreen) -> Void = { [weak self] localRect, screen in
+        let onCaptureAction: (CGRect, NSScreen, CaptureMode) -> Void = { [weak self] localRect, screen, mode in
             #if DEBUG
             CaptureBenchmarkTracker.shared.recordMouseRelease()
             #endif
@@ -105,7 +106,7 @@ class ScreenCaptureManager: NSObject {
                 guard let self = self else { return }
                 // The first gesture to end wins.
                 if self.requestState.isCurrent(requestID), !self.overlayWindows.isEmpty {
-                    self.selectedRegion = CaptureSelection(rect: localRect, screen: screen)
+                    self.selectedRegion = CaptureSelection(rect: localRect, screen: screen, mode: mode)
                     self.closeOverlay()
                     if localRect != .zero {
                         await self.captureSelection(for: requestID)
@@ -116,16 +117,24 @@ class ScreenCaptureManager: NSObject {
             }
         }
 
+        // All displays share the selected mode while each keeps its own menu origin.
+        let modeSelection = CaptureModeSelection()
         // Create one overlay window for each screen.
         for screen in NSScreen.screens {
             log("NSScreen Frame: \(screen.frame)")
-            let captureView = CaptureView(onCapture: onCaptureAction, screen: screen)
+            let modeInteraction = CaptureModeInteraction(selection: modeSelection)
+            let captureView = CaptureView(onCapture: onCaptureAction, screen: screen,
+                                          modeInteraction: modeInteraction)
             let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             window.isOpaque = false
             window.backgroundColor = .clear
             window.level = .screenSaver
             window.sharingType = .none // Excludes overlay from ScreenCaptureKit recordings
-            window.contentView = ActionHostingView(rootView: captureView)
+            let hostingView = ActionHostingView(rootView: captureView)
+            window.contentView = hostingView
+            hostingView.onRightMouseDown = { point, size in modeInteraction.begin(at: point, in: size) }
+            hostingView.onRightMouseDragged = { point in modeInteraction.move(to: point) }
+            hostingView.onRightMouseUp = { point in modeInteraction.end(at: point) }
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             window.acceptsMouseMovedEvents = true
             window.alphaValue = 0.0 // Start at 0 for fade in
@@ -225,10 +234,11 @@ class ScreenCaptureManager: NSObject {
         
         streamContent = nil
         let activeScreen = selectedRegion?.screen
+        let mode = selectedRegion?.mode ?? .standardOCR
         selectedRegion = nil
         
         log("Capture sequence completed. Success: \(image != nil)")
-        onCaptureComplete?(image, activeScreen, requestID)
+        onCaptureComplete?(image, activeScreen, mode, requestID)
     }
 
     // MARK: - Logging helper

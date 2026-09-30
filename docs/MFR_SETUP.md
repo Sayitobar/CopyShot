@@ -1,0 +1,35 @@
+# MFR 1.5 (Pix2Text) Setup & Specifications
+
+The LaTeX capture mode runs the [Pix2Text MFR 1.5](https://huggingface.co/breezedeus/pix2text-mfr-1.5) encoder and decoder locally via ONNX Runtime (`OnnxRuntimeBindings`). It recognizes a cropped mathematical formula.
+
+## Model Specifications
+
+- **Model**: `breezedeus/pix2text-mfr-1.5` (DeiT ViT encoder + autoregressive transformer decoder).
+- **Input**: Raw cropped capture rendered onto a $384 \times 384$ white canvas (`NSColor.white`), normalized channel-first to $[-1.0, 1.0]$.
+- **Inference**: Greedy autoregressive decoding (argmax, zero sampling temperature) up to **1,024 tokens**.
+- **Output Format**: Raw LaTeX math string (e.g., `x^{2} + y^{2} = z^{2}`), trimmed of outer whitespace and copied directly to the clipboard.
+- **Scope**: Designed for tightly-cropped single formulas (display or inline). No layout/formula detector (MFD) is bundled; mixed paragraphs with text and formulas are not segmented.
+
+## POC Setup (Current)
+
+Run `sh scripts/install-mfr-1.5.sh` once on a machine with internet access. The script downloads `encoder_model.onnx` (~87.5 MB), `decoder_model.onnx` (~32 MB), and `tokenizer.json` (~113 KB) into:
+`~/Library/Containers/com.sayitobar.CopyShot/Data/Library/Application Support/CopyShot/MFR-1.5/`
+
+Sessions are initialized lazily on the first LaTeX capture and reused on a background serial queue. Missing resources report an error in the HUD and leave the clipboard intact.
+
+---
+
+## Target Implementation Plan (On-Demand Model Manager)
+
+To keep CopyShot featherweight (~10 MB) while preserving 100% on-device privacy:
+
+1. **Lightweight Distribution**: Do not bundle the ~120 MB model files inside the base release DMG.
+2. **First-Use Prompt**: Selecting LaTeX mode when uninstalled prompts the user:
+   > *"LaTeX recognition runs locally using the Pix2Text model (~120 MB). No images or data ever leave your Mac.*  
+   > *[ Download Model ] [ Cancel ]"*
+3. **Settings Management ("Models / LaTeX")**:
+   - Status indicator (`Installed (~120 MB)` / `Not Installed`).
+   - One-click `Download Model` and `Delete Model` buttons (allowing users to reclaim disk space).
+4. **Air-Gapped / Offline Import**:
+   - A `Locate / Import Model...` button allowing enterprise or air-gapped users to import the three model files locally without an internet connection.
+

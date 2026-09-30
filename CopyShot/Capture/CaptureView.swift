@@ -8,16 +8,22 @@
 import SwiftUI
 
 struct CaptureView: View {
+    @ObservedObject var modeInteraction: CaptureModeInteraction
+    @ObservedObject private var modeSelection: CaptureModeSelection
     @State private var startPoint: CGPoint?
     @State private var endPoint: CGPoint?
     @State private var mouseLocation: CGPoint = .zero
     @State private var isMouseInside: Bool
-    let onCapture: (CGRect, NSScreen) -> Void
+    @State private var modeLabelSize: CGSize = .zero
+    let onCapture: (CGRect, NSScreen, CaptureMode) -> Void
     let screen: NSScreen
 
-    init(onCapture: @escaping (CGRect, NSScreen) -> Void, screen: NSScreen) {
+    init(onCapture: @escaping (CGRect, NSScreen, CaptureMode) -> Void, screen: NSScreen,
+         modeInteraction: CaptureModeInteraction) {
         self.onCapture = onCapture
         self.screen = screen
+        self.modeInteraction = modeInteraction
+        self.modeSelection = modeInteraction.selection
         
         let mouseLoc = NSEvent.mouseLocation
         let isInside = NSMouseInRect(mouseLoc, screen.frame, false)
@@ -52,6 +58,37 @@ struct CaptureView: View {
                 }
             }
             .compositingGroup()
+            .overlay(alignment: .topLeading) {
+                if let pressPoint = modeInteraction.pressPoint {
+                    RadialCaptureMenu(descriptors: CaptureModeDescriptor.available,
+                                      candidateIndex: modeInteraction.candidateIndex)
+                        .position(modeInteraction.menuCenter ?? pressPoint)
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if isMouseInside, modeInteraction.pressPoint == nil,
+                   let descriptor = CaptureModeDescriptor.descriptor(for: modeSelection.mode) {
+                    Text(descriptor.title)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.regularMaterial, in: Capsule())
+                        .fixedSize()
+                        .background(GeometryReader { labelGeometry in
+                            Color.clear.preference(key: ModeLabelSizeKey.self, value: labelGeometry.size)
+                        })
+                        .onPreferenceChange(ModeLabelSizeKey.self) { modeLabelSize = $0 }
+                        .position(
+                            x: min(max(mouseLocation.x + modeLabelSize.width / 2 + 12,
+                                       modeLabelSize.width / 2),
+                                   geometry.size.width - modeLabelSize.width / 2),
+                            y: min(max(mouseLocation.y + modeLabelSize.height / 2 + 12,
+                                       modeLabelSize.height / 2),
+                                   geometry.size.height - modeLabelSize.height / 2)
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
             .ignoresSafeArea()
             .gesture(dragGesture(in: geometry))
             .onContinuousHover { phase in
@@ -64,7 +101,7 @@ struct CaptureView: View {
                 }
             }
             .accessibilityElement(children: .contain)
-            .accessibilityLabel(Text("Screen capture area. Drag to select a region to copy text from."))
+            .accessibilityLabel(Text("Screen capture area. Drag to select a region; right click to choose a capture mode."))
         }
         .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
     }
@@ -84,10 +121,15 @@ struct CaptureView: View {
             }
             .onEnded { value in
                 guard let localRect = selectionRectangle(), localRect.width > 5, localRect.height > 5 else {
-                    onCapture(.zero, screen)
+                    onCapture(.zero, screen, modeSelection.mode)
                     return
                 }
-                onCapture(localRect, screen)
+                onCapture(localRect, screen, modeSelection.mode)
             }
     }
+}
+
+private struct ModeLabelSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
 }

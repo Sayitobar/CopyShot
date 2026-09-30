@@ -77,10 +77,7 @@ struct QuickActionsSettingsView: View {
                 
                 // MARK: - Action Shelf Order & Visibility List
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Built-in Actions")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 4)
+                    SettingsSectionHeader(title: "OCR (Text)")
                     
                     let activeOrder = settings.quickActionsConfig.actionOrder.filter { metadataMap[$0] != nil }
                     let rowHeight: CGFloat = 38
@@ -168,10 +165,7 @@ struct QuickActionsSettingsView: View {
                 
                 // MARK: - Custom Actions Template Card
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Custom Actions")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 4)
+                    SettingsSectionHeader(title: "Custom Actions")
                     
                     VStack(alignment: .leading, spacing: 0) {
                         HStack(spacing: 8) {

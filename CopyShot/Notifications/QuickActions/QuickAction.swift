@@ -63,18 +63,48 @@ struct QuickAction: Identifiable, Equatable {
     
     /// Default set of quick actions available for text captures using default configuration.
     static var defaultActions: [QuickAction] {
-        defaultActions(for: nil)
+        defaultActions(for: nil, mode: .standardOCR)
     }
     
     /// Returns default quick actions dynamically adjusted for the recognized text using default configuration.
-    static func defaultActions(for text: String?) -> [QuickAction] {
-        actions(for: text, config: QuickActionsConfig())
+    static func defaultActions(for text: String?, mode: CaptureMode = .standardOCR) -> [QuickAction] {
+        actions(for: text, mode: mode, config: QuickActionsConfig())
     }
     
-    /// Constructs ordered, active quick actions based on user configuration and recognized capture text.
-    static func actions(for text: String?, config: QuickActionsConfig) -> [QuickAction] {
+    /// Constructs ordered, active quick actions based on user configuration, recognized capture text, and capture mode.
+    static func actions(for text: String?, mode: CaptureMode = .standardOCR, config: QuickActionsConfig) -> [QuickAction] {
         guard config.isEnabled else { return [] }
         
+        switch mode {
+        case .standardOCR:
+            return standardOCRActions(for: text, config: config)
+        case .qrBarcode:
+            let isURL = text != nil && WebActionHelper.isURL(text!)
+            return [
+                QuickAction(
+                    id: "search_web",
+                    title: isURL ? "Open URL" : "Search Web",
+                    icon: isURL ? .system("safari") : .system("magnifyingglass"),
+                    shortcutNumber: 1,
+                    transform: { $0 }
+                )
+            ]
+        case .latex:
+            return [
+                QuickAction(
+                    id: "latex_wrap_dollar",
+                    title: "Wrap $...$",
+                    icon: .typography("$"),
+                    shortcutNumber: 1,
+                    transform: QuickActionTransforms.wrapDollar
+                )
+            ]
+        case .table:
+            return []
+        }
+    }
+    
+    private static func standardOCRActions(for text: String?, config: QuickActionsConfig) -> [QuickAction] {
         let isURL = text != nil && WebActionHelper.isURL(text!)
         
         // Base sub-actions pool for Change Case
@@ -523,5 +553,19 @@ enum QuickActionTransforms {
         String(text.map { char in
             char.isUppercase ? (char.lowercased().first ?? char) : (char.uppercased().first ?? char)
         })
+    }
+    
+    /// Wraps LaTeX math formula in $...$ (or cycles to $$...$$, then back to raw unwrapped formula).
+    static func wrapDollar(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("$$") && trimmed.hasSuffix("$$") && trimmed.count >= 4 {
+            let inner = trimmed.dropFirst(2).dropLast(2).trimmingCharacters(in: .whitespacesAndNewlines)
+            return String(inner)
+        } else if trimmed.hasPrefix("$") && trimmed.hasSuffix("$") && trimmed.count >= 2 {
+            let inner = trimmed.dropFirst(1).dropLast(1).trimmingCharacters(in: .whitespacesAndNewlines)
+            return "$$\(inner)$$"
+        } else {
+            return "$\(trimmed)$"
+        }
     }
 }
