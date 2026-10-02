@@ -8,6 +8,22 @@ enum CaptureMode: String, Hashable, Codable {
     case table
 }
 
+enum CaptureModeBehavior: String, CaseIterable, Identifiable, Codable {
+    case always = "always"
+    case rememberLast = "rememberLast"
+    case returnToDefaultAfterTimeout = "returnToDefaultAfterTimeout"
+    
+    var id: String { rawValue }
+    
+    var displayTitle: String {
+        switch self {
+        case .always: return "Always Default"
+        case .rememberLast: return "Stick to Last Selected"
+        case .returnToDefaultAfterTimeout: return "Reset After Inactivity"
+        }
+    }
+}
+
 struct CaptureModeDescriptor: Identifiable, Hashable {
     let id: CaptureMode
     let title: String

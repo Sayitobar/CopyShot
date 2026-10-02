@@ -31,6 +31,44 @@ class OCRService {
         }
     }
 
+    private static func makeSyntheticImage() -> CGImage? {
+        CGContext(
+            data: nil,
+            width: 16,
+            height: 16,
+            bitsPerComponent: 8,
+            bytesPerRow: 16 * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )?.makeImage()
+    }
+
+    /// Runs and discards a lightweight synthetic-image request to prewarm Vision text recognition.
+    static func prewarm() {
+        let settings = SettingsManager.shared
+        let recognitionLevel: VNRequestTextRecognitionLevel = settings.recognitionLevel == .accurate ? .accurate : .fast
+        let usesLanguageCorrection = settings.usesLanguageCorrection
+        let recognitionLanguages = settings.recognitionLanguages
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let image = makeSyntheticImage(),
+                  let processed = preprocessImage(image) ?? makeSyntheticImage() else { return }
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = recognitionLevel
+            request.usesLanguageCorrection = usesLanguageCorrection
+            request.recognitionLanguages = recognitionLanguages
+            let handler = VNImageRequestHandler(cgImage: processed, options: [:])
+            do {
+                try handler.perform([request])
+                _ = request.results
+            } catch {
+                #if DEBUG
+                debugPrint("[OCRService] Prewarm error: \(error.localizedDescription)")
+                #endif
+            }
+        }
+    }
+
     static func performOCRSegments(on image: CGImage,
                                    completion: @escaping (Result<[TextSegment], Error>) -> Void) {
         let settings = SettingsManager.shared

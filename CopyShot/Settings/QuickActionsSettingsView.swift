@@ -25,10 +25,25 @@ struct QuickActionsSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
     @State private var expandedActionId: String? = nil
     var baselineMode: CaptureMode? = nil
-    @State private var selectedMode: CaptureMode = .standardOCR
+    var externalSelectedMode: Binding<CaptureMode>? = nil
+    @State private var internalSelectedMode: CaptureMode = .standardOCR
     @State private var rowHeights: [String: CGFloat] = [:]
-    @Namespace private var modeHighlight
-    private var mode: CaptureMode { baselineMode ?? selectedMode }
+    
+    init(selectedMode: Binding<CaptureMode>? = nil, baselineMode: CaptureMode? = nil) {
+        self.externalSelectedMode = selectedMode
+        self.baselineMode = baselineMode
+        if let base = baselineMode {
+            self._internalSelectedMode = State(initialValue: base)
+        } else if let ext = selectedMode {
+            self._internalSelectedMode = State(initialValue: ext.wrappedValue)
+        }
+    }
+    
+    private var activeSelectedMode: Binding<CaptureMode> {
+        externalSelectedMode ?? $internalSelectedMode
+    }
+    
+    private var mode: CaptureMode { baselineMode ?? activeSelectedMode.wrappedValue }
     private var catalog: [ActionCatalogEntry] { ActionRegistry.shared.catalog(for: mode, config: settings.quickActionsConfig) }
     private var scopedConfig: ModeActionConfiguration { settings.quickActionsConfig.modeConfiguration(for: mode) }
     @State private var showingResetConfirmation: Bool = false
@@ -144,6 +159,7 @@ struct QuickActionsSettingsView: View {
                                             Color.clear.frame(width: 36, height: 1)
                                             
                                             ActionDrawerDetailView(actionId: actionId)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
                                                 .padding(10)
                                                 .background(Color(NSColor.controlBackgroundColor).opacity(0.75))
                                                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -154,6 +170,7 @@ struct QuickActionsSettingsView: View {
                                             
                                             Color.clear.frame(width: 46, height: 1)
                                         }
+                                        .frame(maxWidth: .infinity)
                                         .padding(.top, 6)
                                         .padding(.bottom, 8)
                                     }
@@ -189,7 +206,7 @@ struct QuickActionsSettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(Color.accentColor)
                     .padding(.top, 4)
                     .alert("Reset Quick Actions to Defaults?", isPresented: $showingResetConfirmation) {
                         Button("Reset", role: .destructive) {
@@ -205,7 +222,7 @@ struct QuickActionsSettingsView: View {
             }
         }
         .onPreferenceChange(ActionRowHeightKey.self) { rowHeights = $0 }
-        .onChange(of: selectedMode) {
+        .onChange(of: mode) {
             expandedActionId = nil
             draggingActionId = nil
             dragStartIndex = nil
@@ -216,35 +233,13 @@ struct QuickActionsSettingsView: View {
     }
 
     private var modeSwitcher: some View {
-        HStack(spacing: 4) {
-            ForEach(CaptureModeDescriptor.available) { descriptor in
-                Button {
-                    selectedMode = descriptor.id
-                } label: {
-                    Label(descriptor.id == .qrBarcode ? "QR / Barcode" : descriptor.title, systemImage: descriptor.symbol)
-                        .font(.system(size: 11.5, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                        .background {
-                            if mode == descriptor.id {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.accentColor.opacity(0.15))
-                                    .matchedGeometryEffect(id: "selected-mode", in: modeHighlight, properties: .position)
-                                    .transition(.identity)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("qa-mode-\(descriptor.id.rawValue)")
-                .accessibilityAddTraits(mode == descriptor.id ? .isSelected : [])
-            }
-        }
-        .animation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.35), value: mode)
-        .padding(4)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("qa-mode-switcher")
+        ModeSwitcher(
+            selectedMode: Binding(
+                get: { mode },
+                set: { activeSelectedMode.wrappedValue = $0 }
+            ),
+            accessibilityPrefix: "qa"
+        )
     }
 
     // MARK: - Mutation & Drag Helpers
@@ -464,9 +459,11 @@ private struct ActionDrawerDetailView: View {
                         title: "Search Engine",
                         items: SearchEngine.allCases.map { ($0, $0.rawValue) },
                         selection: $settings.quickActionsConfig.searchEngine,
-                        minWidth: 125
+                        minWidth: 125,
+                        accessibilityIdentifier: "qa-search-engine-picker"
                     )
                 }
+                .frame(maxWidth: .infinity)
             } else if ActionMetadata.allActions.first(where: { $0.id == actionId })?.parameters.contains(.translateLanguage) == true {
                 HStack(spacing: 8) {
                     Text("Default Language:")
@@ -479,9 +476,11 @@ private struct ActionDrawerDetailView: View {
                         title: "Default Language",
                         items: TranslationTargetLanguage.supportedLanguages.map { ($0.code, $0.name) },
                         selection: $settings.quickActionsConfig.defaultTranslateLanguage,
-                        minWidth: 155
+                        minWidth: 155,
+                        accessibilityIdentifier: "qa-default-language-picker"
                     )
                 }
+                .frame(maxWidth: .infinity)
             }
             
             if ActionMetadata.allActions.first(where: { $0.id == actionId })?.parameters.contains(.markdownHeader) == true {
@@ -490,6 +489,7 @@ private struct ActionDrawerDetailView: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .accessibilityIdentifier("qa-markdown-header")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // Sub-actions Ordering List (Change Case transforms with Checkboxes)
@@ -705,18 +705,18 @@ private struct ActionDrawerDetailView: View {
                                 Text("Add Language")
                                     .font(.system(size: 10.5, weight: .medium))
                             }
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(Color.accentColor)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3.5)
                             .background(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .fill(Color.blue.opacity(0.1))
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.accentColor.opacity(0.1))
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .stroke(Color.blue.opacity(0.25), lineWidth: 0.5)
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(Color.accentColor.opacity(0.25), lineWidth: 0.5)
                             )
-                            .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         }
                         .menuStyle(.borderlessButton)
                         .menuIndicator(.hidden)
@@ -728,6 +728,7 @@ private struct ActionDrawerDetailView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     
     private func addFlyoutLanguage(code: String) {
@@ -814,229 +815,4 @@ private struct ActionDrawerDetailView: View {
     }
 }
 
-// MARK: - Modern Apple-Style Dropdown Picker Theme
 
-struct ModernDropdownTheme {
-    // Icon colors
-    static let iconNormal = Color.secondary.opacity(0.8)
-    static let iconHovered = Color.accentColor // Blue on hover
-    
-    // Label text
-    static let textNormal = Color.primary
-    
-    // Dark mode colors
-    static let bgDarkNormal = Color.white.opacity(0.07)
-    static let bgDarkHovered = bgDarkNormal
-    static let borderDarkNormal = Color.white.opacity(0.14)
-    static let borderDarkHovered = Color.white.opacity(0.28)
-    static let shadowDark = bgDarkNormal
-    
-    // Light mode colors
-    static let bgLightNormal = Color.black.opacity(0.03)
-    static let bgLightHovered = bgLightNormal
-    static let borderLightNormal = Color.black.opacity(0.10)
-    static let borderLightHovered = Color.black.opacity(0.22)
-    static let shadowLight = bgLightNormal
-    
-    // Geometry & Layout Metrics
-    static let cornerRadius: CGFloat = 6
-    static let borderWidth: CGFloat = 0.75
-    static let horizontalPadding: CGFloat = 9
-    static let verticalPadding: CGFloat = 4.5
-    static let contentSpacing: CGFloat = 6
-    static let titleFontSize: CGFloat = 11.5
-    static let iconFontSize: CGFloat = 8.5
-    static let shadowRadius: CGFloat = 1.0
-    static let shadowY: CGFloat = 0.5
-    
-    // Transitions & Durations
-    static let hoverAnimationDuration: TimeInterval = 0.15
-    static let hoverAnimation: Animation = .easeInOut(duration: hoverAnimationDuration)
-    
-    static func backgroundColor(isActive: Bool, isDark: Bool) -> Color {
-        if isDark {
-            return isActive ? bgDarkHovered : bgDarkNormal
-        } else {
-            return isActive ? bgLightHovered : bgLightNormal
-        }
-    }
-    
-    static func borderColor(isActive: Bool, isDark: Bool) -> Color {
-        if isDark {
-            return isActive ? borderDarkHovered : borderDarkNormal
-        } else {
-            return isActive ? borderLightHovered : borderLightNormal
-        }
-    }
-    
-    static func iconColor(isActive: Bool) -> Color {
-        isActive ? iconHovered : iconNormal
-    }
-    
-    static func shadowColor(isDark: Bool) -> Color {
-        isDark ? shadowDark : shadowLight
-    }
-}
-
-// MARK: - Dropdown Anchor View
-
-private struct DropdownAnchorView: NSViewRepresentable {
-    let onResolve: (NSView) -> Void
-    
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            onResolve(view)
-        }
-        return view
-    }
-    
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            onResolve(nsView)
-        }
-    }
-}
-
-// MARK: - Dropdown Menu Controller
-
-private final class DropdownMenuController<T: Hashable>: NSObject, NSMenuDelegate {
-    private var callback: ((T) -> Void)?
-    private var dismissCallback: (() -> Void)?
-    
-    func show(
-        items: [(id: T, title: String)],
-        selection: T,
-        anchorView: NSView?,
-        onSelect: @escaping (T) -> Void,
-        onDismiss: (() -> Void)? = nil
-    ) {
-        self.callback = onSelect
-        self.dismissCallback = onDismiss
-        
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        menu.delegate = self
-        
-        for item in items {
-            let menuItem = NSMenuItem(
-                title: item.title,
-                action: #selector(itemAction(_:)),
-                keyEquivalent: ""
-            )
-            menuItem.target = self
-            menuItem.representedObject = item.id
-            if item.id == selection {
-                menuItem.state = .on
-            }
-            menu.addItem(menuItem)
-        }
-        
-        let selectedItem = menu.items.first(where: { ($0.representedObject as? T) == selection })
-        
-        if let anchor = anchorView, anchor.window != nil {
-            menu.popUp(positioning: selectedItem, at: NSPoint(x: 0, y: 0), in: anchor)
-        } else if let window = NSApp.keyWindow ?? NSApp.windows.first, let contentView = window.contentView {
-            let mouseLoc = window.mouseLocationOutsideOfEventStream
-            menu.popUp(positioning: selectedItem, at: mouseLoc, in: contentView)
-        }
-    }
-    
-    @objc private func itemAction(_ sender: NSMenuItem) {
-        if let id = sender.representedObject as? T {
-            callback?(id)
-        }
-    }
-    
-    func menuDidClose(_ menu: NSMenu) {
-        dismissCallback?()
-    }
-}
-
-// MARK: - Modern Apple-Style Dropdown Picker
-
-struct ModernDropdownPicker<T: Hashable>: View {
-    let title: String
-    let items: [(id: T, title: String)]
-    @Binding var selection: T
-    var minWidth: CGFloat = 140
-    
-    @State private var isHovered = false
-    @State private var isMenuOpen = false
-    @State private var anchorView: NSView?
-    @State private var menuController = DropdownMenuController<T>()
-    @Environment(\.colorScheme) private var colorScheme
-    
-    private var isDark: Bool {
-        colorScheme == .dark
-    }
-    
-    private var isActive: Bool {
-        isHovered || isMenuOpen
-    }
-    
-    private var currentTitle: String {
-        items.first(where: { $0.id == selection })?.title ?? title
-    }
-    
-    var body: some View {
-        Button {
-            isMenuOpen = true
-            menuController.show(
-                items: items,
-                selection: selection,
-                anchorView: anchorView,
-                onSelect: { newSelection in
-                    selection = newSelection
-                },
-                onDismiss: {
-                    isMenuOpen = false
-                }
-            )
-        } label: {
-            HStack(spacing: ModernDropdownTheme.contentSpacing) {
-                Text(currentTitle)
-                    .font(.system(size: ModernDropdownTheme.titleFontSize, weight: .medium))
-                    .foregroundStyle(ModernDropdownTheme.textNormal)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                
-                Spacer(minLength: 4)
-                
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: ModernDropdownTheme.iconFontSize, weight: .semibold))
-                    .foregroundStyle(ModernDropdownTheme.iconColor(isActive: isActive))
-            }
-            .padding(.horizontal, ModernDropdownTheme.horizontalPadding)
-            .padding(.vertical, ModernDropdownTheme.verticalPadding)
-            .frame(minWidth: minWidth)
-            .background(
-                RoundedRectangle(cornerRadius: ModernDropdownTheme.cornerRadius, style: .continuous)
-                    .fill(ModernDropdownTheme.backgroundColor(isActive: isActive, isDark: isDark))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: ModernDropdownTheme.cornerRadius, style: .continuous)
-                    .stroke(
-                        ModernDropdownTheme.borderColor(isActive: isActive, isDark: isDark),
-                        lineWidth: ModernDropdownTheme.borderWidth
-                    )
-            )
-            .background(
-                DropdownAnchorView { view in
-                    self.anchorView = view
-                }
-            )
-            .contentShape(RoundedRectangle(cornerRadius: ModernDropdownTheme.cornerRadius, style: .continuous))
-            .shadow(
-                color: ModernDropdownTheme.shadowColor(isDark: isDark),
-                radius: ModernDropdownTheme.shadowRadius,
-                y: ModernDropdownTheme.shadowY
-            )
-            .animation(ModernDropdownTheme.hoverAnimation, value: isActive)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-    }
-}

@@ -15,6 +15,7 @@ struct FormulaResult: Equatable, CustomStringConvertible {
 }
 
 protocol FormulaRecognizing: AnyObject {
+    func prewarm()
     func recognize(_ image: CGImage, completion: @escaping (Result<FormulaResult, Error>) -> Void)
 }
 
@@ -39,20 +40,59 @@ enum FormulaRecognitionError: LocalizedError {
 /// Sessions load lazily and remain cached until 60 seconds idle or memory pressure.
 final class FormulaRecognitionService: FormulaRecognizing {
     private let queue = DispatchQueue(label: "CopyShot.MFR", qos: .userInitiated)
-    private lazy var modelCache = IdleModelCache(queue: queue, idleTimeout: modelIdleTimeout, load: Self.loadModel)
-    private let modelIdleTimeout: TimeInterval
+    private lazy var modelCache = IdleModelCache(queue: queue, policy: initialPolicy, load: Self.loadModel)
+    private let initialPolicy: ModelUnloadPolicy
     private let memoryPressure: DispatchSourceMemoryPressure
+    private var policyObserver: Any?
 
-    init(modelIdleTimeout: TimeInterval = 60) {
-        self.modelIdleTimeout = modelIdleTimeout
+    init(policy: ModelUnloadPolicy = SettingsManager.shared.mfrUnloadPolicy) {
+        self.initialPolicy = policy
         memoryPressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: queue)
         memoryPressure.setEventHandler { [weak self] in
             self?.modelCache.release()
         }
         memoryPressure.resume()
+
+        policyObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("MFRUnloadPolicyChanged"),
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            self?.updatePolicy(SettingsManager.shared.mfrUnloadPolicy)
+        }
     }
 
-    deinit { memoryPressure.cancel() }
+    convenience init(modelIdleTimeout: TimeInterval) {
+        self.init(policy: ModelUnloadPolicy(rawSeconds: modelIdleTimeout))
+    }
+
+    deinit {
+        memoryPressure.cancel()
+        if let policyObserver {
+            NotificationCenter.default.removeObserver(policyObserver)
+        }
+    }
+
+    func updatePolicy(_ policy: ModelUnloadPolicy) {
+        queue.async { [weak self] in
+            self?.modelCache.updatePolicy(policy)
+        }
+    }
+
+    /// Loads and caches MFR ONNX sessions in the background, starting the idle eviction timer.
+    func prewarm() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            do {
+                _ = try self.modelCache.value()
+                self.modelCache.scheduleIdleRelease()
+            } catch {
+                #if DEBUG
+                debugPrint("[MFR 1.5] prewarm failed: \(error.localizedDescription)")
+                #endif
+            }
+        }
+    }
 
     func recognize(_ image: CGImage, completion: @escaping (Result<FormulaResult, Error>) -> Void) {
         queue.async { [self] in

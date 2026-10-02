@@ -61,6 +61,8 @@ class ScreenCaptureManager: NSObject {
     private var streamContent: SCShareableContent?
     private var previousApp: NSRunningApplication?
     var onCaptureComplete: ((CGImage?, NSScreen?, CaptureMode, UUID) -> Void)?
+    var onPrewarmRequested: ((CaptureMode) -> Void)?
+    var onSessionReset: (() -> Void)?
 
     func isLatestCapture(_ requestID: UUID) -> Bool {
         requestState.isLatest(requestID)
@@ -80,6 +82,11 @@ class ScreenCaptureManager: NSObject {
     func startCapture() {
         guard let requestID = requestState.begin() else { return }
         previousApp = NSWorkspace.shared.frontmostApplication
+        onSessionReset?()
+        let initialMode = SettingsManager.shared.initialCaptureMode()
+        if initialMode == SettingsManager.shared.defaultCaptureMode {
+            onPrewarmRequested?(initialMode)
+        }
         Task { await showOverlay(for: requestID) }
     }
     
@@ -107,6 +114,9 @@ class ScreenCaptureManager: NSObject {
                 // The first gesture to end wins.
                 if self.requestState.isCurrent(requestID), !self.overlayWindows.isEmpty {
                     self.selectedRegion = CaptureSelection(rect: localRect, screen: screen, mode: mode)
+                    if localRect != .zero {
+                        SettingsManager.shared.recordCaptureModeUsed(mode)
+                    }
                     self.closeOverlay()
                     if localRect != .zero {
                         await self.captureSelection(for: requestID)
@@ -118,7 +128,14 @@ class ScreenCaptureManager: NSObject {
         }
 
         // All displays share the selected mode while each keeps its own menu origin.
-        let modeSelection = CaptureModeSelection()
+        let initialMode = SettingsManager.shared.initialCaptureMode()
+        let modeSelection = CaptureModeSelection(mode: initialMode)
+        modeSelection.onModeSelected = { [weak self] selectedMode in
+            guard let self else { return }
+            if selectedMode == .latex || selectedMode == .qrBarcode || selectedMode == .standardOCR || selectedMode == .table {
+                self.onPrewarmRequested?(selectedMode)
+            }
+        }
         // Create one overlay window for each screen.
         for screen in NSScreen.screens {
             log("NSScreen Frame: \(screen.frame)")

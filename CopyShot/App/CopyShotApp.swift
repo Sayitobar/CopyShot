@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // The manager is now created on the main actor, which is safe.
     private let captureManager = ScreenCaptureManager()
     private lazy var formulaService: FormulaRecognizing = FormulaRecognitionService()
+    private lazy var recognitionPrewarmer = RecognitionPrewarmer(formulaService: formulaService)
 
     private lazy var capturePipeline = CapturePipeline(
         isLatest: { [weak self] requestID in
@@ -71,6 +72,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         // are on the Main Actor.
         captureManager.onCaptureComplete = { [weak self] image, screen, mode, requestID in
             self?.capturePipeline.completeCapture(image: image, screen: screen, mode: mode, requestID: requestID)
+        }
+        
+        captureManager.onPrewarmRequested = { [weak self] mode in
+            self?.recognitionPrewarmer.prewarm(mode: mode)
+        }
+        
+        captureManager.onSessionReset = { [weak self] in
+            self?.recognitionPrewarmer.resetSession()
         }
         
         // 2. Register and listen for hotkeys.

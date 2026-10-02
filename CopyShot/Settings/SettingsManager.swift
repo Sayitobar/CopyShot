@@ -40,6 +40,13 @@ enum SettingsKeys {
     static let quickActionsConfig = "quickActionsConfig"
     static let prettifyLatex = "prettifyLatex"
     static let fixLatexSyntax = "fixLatexSyntax"
+    static let defaultCaptureMode = "defaultCaptureMode"
+    static let captureModeBehavior = "captureModeBehavior"
+    static let captureModeResetTimeoutMinutes = "captureModeResetTimeoutMinutes"
+    static let lastUsedCaptureMode = "lastUsedCaptureMode"
+    static let lastCaptureTimestamp = "lastCaptureTimestamp"
+    static let mfrUnloadPolicy = "mfrUnloadPolicy"
+    static let prewarmRecognition = "prewarmRecognition"
 }
 
 // Using an enum for the recognition level makes our code safer and clearer.
@@ -185,6 +192,56 @@ class SettingsManager: ObservableObject {
         }
     }
     
+    /// Default capture mode when initiating screen capture (Default: .standardOCR)
+    @Published var defaultCaptureMode: CaptureMode {
+        didSet {
+            defaults.set(defaultCaptureMode.rawValue, forKey: SettingsKeys.defaultCaptureMode)
+        }
+    }
+    
+    /// Capture mode selection behavior (Always default, remember last, or return to default after timeout)
+    @Published var captureModeBehavior: CaptureModeBehavior {
+        didSet {
+            defaults.set(captureModeBehavior.rawValue, forKey: SettingsKeys.captureModeBehavior)
+        }
+    }
+    
+    /// Inactivity timeout in minutes before returning to default mode
+    @Published var captureModeResetTimeoutMinutes: Int {
+        didSet {
+            defaults.set(captureModeResetTimeoutMinutes, forKey: SettingsKeys.captureModeResetTimeoutMinutes)
+        }
+    }
+    
+    /// Stored last used capture mode for session continuity
+    @Published var lastUsedCaptureMode: CaptureMode {
+        didSet {
+            defaults.set(lastUsedCaptureMode.rawValue, forKey: SettingsKeys.lastUsedCaptureMode)
+        }
+    }
+    
+    /// Timestamp of last completed capture
+    @Published var lastCaptureDate: Date? {
+        didSet {
+            defaults.set(lastCaptureDate, forKey: SettingsKeys.lastCaptureTimestamp)
+        }
+    }
+    
+    /// Pix2Text MFR 1.5 memory retention policy (0 = immediately, >0 = timeout, -1 = never)
+    @Published var mfrUnloadPolicy: ModelUnloadPolicy {
+        didSet {
+            defaults.set(mfrUnloadPolicy.rawSeconds, forKey: SettingsKeys.mfrUnloadPolicy)
+            NotificationCenter.default.post(name: NSNotification.Name("MFRUnloadPolicyChanged"), object: nil)
+        }
+    }
+    
+    /// Prewarm active recognition engine (OCR, Barcode, LaTeX) asynchronously to eliminate cold-start delay
+    @Published var prewarmRecognition: Bool {
+        didSet {
+            defaults.set(prewarmRecognition, forKey: SettingsKeys.prewarmRecognition)
+        }
+    }
+    
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         // MARK: - Initial Settings Check & Assignment
@@ -252,6 +309,79 @@ class SettingsManager: ObservableObject {
         // LaTeX Settings (Default: True)
         self.prettifyLatex = defaults.object(forKey: SettingsKeys.prettifyLatex) as? Bool ?? true
         self.fixLatexSyntax = defaults.object(forKey: SettingsKeys.fixLatexSyntax) as? Bool ?? true
+        
+        // Capture Mode Configuration (Default: .standardOCR, .always, 15 min)
+        let resolvedDefaultMode: CaptureMode
+        if let raw = defaults.string(forKey: SettingsKeys.defaultCaptureMode),
+           let mode = CaptureMode(rawValue: raw) {
+            resolvedDefaultMode = mode
+        } else {
+            resolvedDefaultMode = .standardOCR
+        }
+        self.defaultCaptureMode = resolvedDefaultMode
+        
+        if let raw = defaults.string(forKey: SettingsKeys.captureModeBehavior),
+           let behavior = CaptureModeBehavior(rawValue: raw) {
+            self.captureModeBehavior = behavior
+        } else {
+            self.captureModeBehavior = .always
+        }
+        
+        if defaults.object(forKey: SettingsKeys.captureModeResetTimeoutMinutes) == nil {
+            self.captureModeResetTimeoutMinutes = 15
+        } else {
+            self.captureModeResetTimeoutMinutes = max(1, defaults.integer(forKey: SettingsKeys.captureModeResetTimeoutMinutes))
+        }
+        
+        if let raw = defaults.string(forKey: SettingsKeys.lastUsedCaptureMode),
+           let mode = CaptureMode(rawValue: raw) {
+            self.lastUsedCaptureMode = mode
+        } else {
+            self.lastUsedCaptureMode = resolvedDefaultMode
+        }
+        
+        self.lastCaptureDate = defaults.object(forKey: SettingsKeys.lastCaptureTimestamp) as? Date
+        
+        // MFR Unload Policy (Default: 60s / 1 minute)
+        if defaults.object(forKey: SettingsKeys.mfrUnloadPolicy) == nil {
+            self.mfrUnloadPolicy = .defaultTimeout
+        } else {
+            let rawSeconds = defaults.double(forKey: SettingsKeys.mfrUnloadPolicy)
+            self.mfrUnloadPolicy = ModelUnloadPolicy(rawSeconds: rawSeconds)
+        }
+        
+        // Recognition Prewarming (Default: True)
+        if defaults.object(forKey: SettingsKeys.prewarmRecognition) == nil {
+            self.prewarmRecognition = true
+        } else {
+            self.prewarmRecognition = defaults.bool(forKey: SettingsKeys.prewarmRecognition)
+        }
+    }
+
+    // MARK: - Capture Mode Resolution
+    
+    func initialCaptureMode(currentTime: Date = Date()) -> CaptureMode {
+        switch captureModeBehavior {
+        case .always:
+            return defaultCaptureMode
+        case .rememberLast:
+            return lastUsedCaptureMode
+        case .returnToDefaultAfterTimeout:
+            guard let lastDate = lastCaptureDate else {
+                return defaultCaptureMode
+            }
+            let elapsedMinutes = currentTime.timeIntervalSince(lastDate) / 60.0
+            if elapsedMinutes <= Double(captureModeResetTimeoutMinutes) {
+                return lastUsedCaptureMode
+            } else {
+                return defaultCaptureMode
+            }
+        }
+    }
+    
+    func recordCaptureModeUsed(_ mode: CaptureMode, date: Date = Date()) {
+        lastUsedCaptureMode = mode
+        lastCaptureDate = date
     }
 
     static func previewLimit(from defaults: UserDefaults) -> Int {

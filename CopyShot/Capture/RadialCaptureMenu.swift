@@ -3,7 +3,18 @@ import SwiftUI
 
 @MainActor
 final class CaptureModeSelection: ObservableObject {
-    @Published var mode: CaptureMode = .standardOCR
+    @Published var mode: CaptureMode
+    var onModeSelected: ((CaptureMode) -> Void)?
+
+    init(mode: CaptureMode = .standardOCR, onModeSelected: ((CaptureMode) -> Void)? = nil) {
+        self.mode = mode
+        self.onModeSelected = onModeSelected
+    }
+
+    func selectMode(_ newMode: CaptureMode) {
+        mode = newMode
+        onModeSelected?(newMode)
+    }
 }
 
 @MainActor
@@ -51,7 +62,8 @@ final class CaptureModeInteraction: ObservableObject {
         guard pressPoint != nil else { return }
         move(to: point)
         if let candidateIndex {
-            selection.mode = CaptureModeDescriptor.available[candidateIndex].id
+            let selectedMode = CaptureModeDescriptor.available[candidateIndex].id
+            selection.selectMode(selectedMode)
         }
         pressPoint = nil
         menuCenter = nil

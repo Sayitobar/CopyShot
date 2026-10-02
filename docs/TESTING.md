@@ -31,6 +31,19 @@ Install the local MFR model first to measure its session lifetime. The benchmark
 
 The DEBUG live capture logger includes both whole seconds and fractional seconds when converting `Duration` to milliseconds. A regression test covers measurements longer than one second.
 
+### Recognition Prewarming Baselines (Cold vs. Warm & Memory Footprint)
+
+Measured via `testRecognitionSessionLifetimeBenchmark()` on macOS arm64 across multiple benchmark runs:
+
+| Mode / Engine | Cold Latency (First Request) | Warm Latency (Subsequent / Prewarmed) | Latency Improvement | Memory Footprint (Cold) | Memory Footprint (Active Warm) | Memory Footprint (After 60s Idle Eviction) |
+|---|---|---|---|---|---|---|
+| **QR / Barcode** (`VNDetectBarcodesRequest`) | 1,163.3–2,341.9 ms | **13.6–18.9 ms** | **98.4% – 99.4% faster** | ~49–51 MiB | ~51.0 MiB | ~51.0 MiB |
+| **Standard OCR** (`VNRecognizeTextRequest`) | 539.0–1,486.3 ms | **41.8–51.9 ms** | **90.6% – 97.2% faster** | ~57–58 MiB | ~60.0 MiB | ~60.0 MiB |
+| **LaTeX (MFR 1.5)** (Model Load + Inference) | 489.6–564.1 ms *(load: 200–240 ms)* | **303.0–319.0 ms** *(load: 0 ms)* | **Model load latency eliminated (~240 ms saved)** | ~72–74 MiB | ~142–166 MiB | **71.0–74.1 MiB** |
+
+- **Vision Prewarming (OCR & Barcode):** Running and discarding a lightweight synthetic-image request pre-initializes Apple Vision's CoreML and Neural Engine contexts, reducing subsequent request latencies from >1.1–2.3s down to 13–50ms with virtually zero memory overhead (<3 MiB).
+- **MFR Prewarming (LaTeX):** Preloading ONNX Runtime sessions eliminates the ~235ms initial load penalty from capture time. Active sessions consume ~142–166 MiB whole-process physical footprint and automatically evict back to ~71–74 MiB upon 60 seconds of inactivity or under system memory pressure.
+
 ## Settings UI smoke test
 
 ```bash

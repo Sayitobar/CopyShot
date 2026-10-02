@@ -27,14 +27,12 @@ enum ActionReorderLayout {
     }
 }
 
-/// Every mode contributes its collapsed natural height; disclosures belong only to the live pane.
+/// Collapsed natural height for the active Quick Actions mode; disclosures belong only to the live pane.
 struct QuickActionsSettingsBaselineView: View {
+    var mode: CaptureMode = .standardOCR
+    
     var body: some View {
-        ZStack(alignment: .top) {
-            ForEach(CaptureModeDescriptor.available) { descriptor in
-                QuickActionsSettingsView(baselineMode: descriptor.id)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        QuickActionsSettingsView(baselineMode: mode)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

@@ -307,6 +307,7 @@ struct SettingsView: View {
     @State private var contentHeight: CGFloat = 0
     @State private var liveContentHeight: CGFloat = 0
     @State private var viewportHeight: CGFloat = 0
+    @State private var selectedQAMode: CaptureMode = .standardOCR
     @Environment(\.colorScheme) var colorScheme
     
     // Toggle content transitions ON/OFF (Slide under tab bar)
@@ -319,7 +320,7 @@ struct SettingsView: View {
         case .general: GeneralSettingsView()
         case .capture: CaptureSettingsView()
         case .notifications: NotificationsSettingsView()
-        case .quickActions: QuickActionsSettingsView()
+        case .quickActions: QuickActionsSettingsView(selectedMode: $selectedQAMode)
         case .about: AboutSettingsView(updaterViewModel: updaterViewModel)
         }
     }
@@ -474,7 +475,9 @@ struct SettingsView: View {
     @ViewBuilder
     private var baselineContentView: some View {
         if layoutTab == .quickActions {
-            QuickActionsSettingsBaselineView()
+            QuickActionsSettingsBaselineView(mode: selectedQAMode)
+        } else if layoutTab == .capture {
+            CaptureSettingsBaselineView()
         } else {
             tabContentView(for: layoutTab)
         }
@@ -515,7 +518,7 @@ struct TabButton: View {
             VStack(spacing: 4) {
                 Image(systemName: tab.iconName)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isSelected ? .blue : (isHovered && !isTransitioning ? .primary : .secondary))
+                    .foregroundStyle(isSelected ? Color.accentColor : (isHovered && !isTransitioning ? .primary : .secondary))
                     .animation(nil, value: isSelected) // Instant color swap, no interpolation during slide
                     .frame(height: 18)
                 
@@ -678,9 +681,88 @@ struct SettingsSectionHeader: View {
     }
 }
 
+// MARK: - Reusable Model Unload Slider
+struct ModelUnloadSlider: View {
+    @Binding var policy: ModelUnloadPolicy
+    @State private var hasAppeared = false
+    
+    private var sliderIndex: Binding<Double> {
+        Binding<Double>(
+            get: {
+                Double(policy.closestStopIndex)
+            },
+            set: { newIndex in
+                let index = Int(newIndex.rounded())
+                if index >= 0 && index < ModelUnloadPolicy.presetStops.count {
+                    policy = ModelUnloadPolicy.presetStops[index]
+                }
+            }
+        )
+    }
+    
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            Text(policy.displayTitle)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            
+            Slider(
+                value: sliderIndex,
+                in: 0...Double(ModelUnloadPolicy.presetStops.count - 1),
+                step: 1
+            )
+            .labelsHidden()
+            .frame(width: 200)
+            .transaction { transaction in
+                if !hasAppeared {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+            }
+            .onAppear {
+                DispatchQueue.main.async {
+                    hasAppeared = true
+                }
+            }
+            .onDisappear {
+                hasAppeared = false
+            }
+            
+            HStack {
+                Text("Immediately")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("Never")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 200)
+        }
+        .frame(width: 200)
+    }
+}
+
+// MARK: - Capture Settings Baseline Probe View
+struct CaptureSettingsBaselineView: View {
+    var body: some View {
+        ZStack(alignment: .top) {
+            ForEach(CaptureModeDescriptor.available) { descriptor in
+                CaptureSettingsView(baselineMode: descriptor.id)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
 // MARK: - Capture Settings
 struct CaptureSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
+    var baselineMode: CaptureMode? = nil
+    @State private var selectedMode: CaptureMode = .standardOCR
+    
+    private var activeMode: CaptureMode { baselineMode ?? selectedMode }
     
     private var availableLanguages: [String] {
         settings.supportedLanguages.filter { !settings.recognitionLanguages.contains($0) }
@@ -688,125 +770,255 @@ struct CaptureSettingsView: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            SettingsRow(label: "Capture Screenshot", tooltip: "Global hotkey to trigger screen capture.", zIndexValue: 11) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HotkeyField(hotkey: $settings.captureHotkey, placeholder: "Click to set")
-                        .frame(width: 200) // Match width of picker above
-                    
-                    Button("Reset Hotkey to Default") {
-                        settings.resetHotkeysToDefaults()
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.blue)
-                    .font(.system(size: 11))
-                    .padding(.leading, 2) // slight optical alignment
-                }
-            }
-            
-            // Section: Vision OCR
+            // Section: Shortcut
             VStack(alignment: .leading, spacing: 14) {
-                SettingsSectionHeader(title: "OCR (Text)")
+                SettingsSectionHeader(title: "Shortcut")
                 
-                VStack(spacing: 20) {
-                    SettingsRow(label: "Recognition Level", tooltip: "Fast: Character detection & small ML model.\nAccurate: Neural network for human-like string & line recognition.", zIndexValue: 10) {
-                        Picker("", selection: $settings.recognitionLevel) {
-                            ForEach(RecognitionLevel.allCases) { level in
-                                Text(level.description).tag(level)
-                            }
+                SettingsRow(label: "Capture Screenshot", tooltip: "Global hotkey to trigger screen capture.", zIndexValue: 20) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HotkeyField(hotkey: $settings.captureHotkey, placeholder: "Click to set")
+                            .frame(width: 200)
+                        
+                        Button("Reset Hotkey to Default") {
+                            settings.resetHotkeysToDefaults()
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .frame(width: 200) // Fixed to be consistent width
-                    }
-                    
-                    SettingsRow(label: "Language Correction", tooltip: "Applies Natural Language Processing (NLP) to minimize misreadings.\nNote: Not supported for Chinese. Disable this for code or technical symbols.", zIndexValue: 9) {
-                        Toggle("", isOn: $settings.usesLanguageCorrection)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
-                    
-                    SettingsRow(label: "Add Language", tooltip: "Add languages to improve recognition accuracy for mixed content.", zIndexValue: 8) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Menu {
-                                ForEach(availableLanguages, id: \.self) { language in
-                                    Button(action: {
-                                        addLanguage(language)
-                                    }) {
-                                        Text(Locale.current.localizedString(forIdentifier: language) ?? language)
-                                    }
-                                }
-                            } label: {
-                                HStack {
-                                    Text(availableLanguages.isEmpty ? "All added" : "Add Language...")
-                                        .foregroundStyle(availableLanguages.isEmpty ? .secondary : .primary)
-                                        .font(.system(size: 12))
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 10))
-                                }
-                                .frame(width: 200) // Match width of picker
-                                .padding(.vertical, 4)
-                                .background(Color(.controlBackgroundColor))
-                                .clipShape(.rect(cornerRadius: 5))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(availableLanguages.isEmpty)
-                            
-                            if !settings.recognitionLanguages.isEmpty {
-                                // Collective Box for added languages
-                                ScrollView(.vertical, showsIndicators: settings.recognitionLanguages.count > 3) {
-                                    VStack(spacing: 0) {
-                                        ForEach(Array(settings.recognitionLanguages.enumerated()), id: \.element) { index, language in
-                                            LanguageRow(
-                                                language: language,
-                                                canRemove: settings.recognitionLanguages.count > 1,
-                                                isLast: index == settings.recognitionLanguages.count - 1
-                                            ) {
-                                                removeLanguage(language)
-                                            }
-                                        }
-                                    }
-                                }
-                                .frame(width: 200) // Match width of container
-                                .frame(maxHeight: 110)
-                                .background(Color(.controlBackgroundColor).opacity(0.5))
-                                .clipShape(.rect(cornerRadius: 6))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                                )
-                            }
-                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                        .font(.system(size: 11))
+                        .padding(.leading, 2) // slight optical alignment
                     }
                 }
             }
             
-            // Section: LaTeX Formulas
+            // Section: Capture Mode
             VStack(alignment: .leading, spacing: 14) {
-                SettingsSectionHeader(title: "LaTeX (Formula Recognition)")
+                SettingsSectionHeader(title: "Capture Mode")
                 
                 VStack(spacing: 20) {
-                    SettingsRow(label: "Prettify Syntax", tooltip: "Compact redundant spaces around braces, operators, and subscripts in LaTeX output.", zIndexValue: 7) {
-                        Toggle("", isOn: $settings.prettifyLatex)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
+                    SettingsRow(label: "Default Mode", tooltip: "Initial capture mode when starting a screenshot.", zIndexValue: 18) {
+                        ModernDropdownPicker(
+                            title: "Default Mode",
+                            items: CaptureModeDescriptor.available.map { ($0.id, $0.title) },
+                            selection: $settings.defaultCaptureMode,
+                            width: 200,
+                            accessibilityIdentifier: "settings-default-capture-mode"
+                        )
                     }
                     
-                    SettingsRow(label: "Fix Syntax", tooltip: "Automatically fix common syntax issues (unclosed braces, terminal delimiters, and unescaped %). Displays \"Fixed broken syntax\" in notification when triggered.", zIndexValue: 6) {
-                        Toggle("", isOn: $settings.fixLatexSyntax)
+                    SettingsRow(label: "Mode Memory", tooltip: "Always Default: Always start in the default mode.\nStick to Last Selected: Stay in the mode used in your last capture.\nReset After Inactivity: Stay in last used mode, but revert to default after a period of inactivity.", zIndexValue: 16) {
+                        ModernDropdownPicker(
+                            title: "Mode Memory",
+                            items: CaptureModeBehavior.allCases.map { ($0, $0.displayTitle) },
+                            selection: $settings.captureModeBehavior,
+                            width: 200,
+                            accessibilityIdentifier: "settings-capture-mode-behavior"
+                        )
+                    }
+                    
+                    if settings.captureModeBehavior == .returnToDefaultAfterTimeout {
+                        SettingsRow(label: "Reset Timeout", tooltip: "Inactivity duration before reverting to the default capture mode.", zIndexValue: 14) {
+                            ModernDropdownPicker(
+                                title: "Reset Timeout",
+                                items: [
+                                    (1, "1 minute"),
+                                    (5, "5 minutes"),
+                                    (15, "15 minutes"),
+                                    (30, "30 minutes"),
+                                    (60, "1 hour")
+                                ],
+                                selection: $settings.captureModeResetTimeoutMinutes,
+                                width: 200,
+                                accessibilityIdentifier: "settings-capture-mode-reset-timeout"
+                            )
+                        }
+                    }
+                    
+                    SettingsRow(
+                        label: "Prewarm Recognition",
+                        tooltip: "Prewarms the active recognition engine (OCR, Barcode, or LaTeX) in the background when capture begins or modes change to eliminate cold-start delay.",
+                        zIndexValue: 12
+                    ) {
+                        Toggle("", isOn: $settings.prewarmRecognition)
                             .toggleStyle(.switch)
                             .labelsHidden()
+                            .accessibilityIdentifier("settings-prewarm-recognition")
                     }
                 }
+            }
+            
+            // Section: Mode Configuration
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsSectionHeader(title: "Mode Configuration")
+                
+                ModeSwitcher(
+                    selectedMode: Binding(
+                        get: { activeMode },
+                        set: { selectedMode = $0 }
+                    ),
+                    accessibilityPrefix: "capture"
+                )
+                
+                // Mode Configuration Panel
+                VStack(spacing: 0) {
+                    Group {
+                        switch activeMode {
+                        case .standardOCR:
+                            ocrSettingsView
+                                .padding(.vertical, 16)
+                                .padding(.horizontal, 14)
+                        case .qrBarcode:
+                            barcodeSettingsView
+                                .padding(.vertical, 22)
+                                .padding(.horizontal, 14)
+                        case .latex:
+                            latexSettingsView
+                                .padding(.vertical, 16)
+                                .padding(.horizontal, 14)
+                        case .table:
+                            tableSettingsView
+                                .padding(.vertical, 22)
+                                .padding(.horizontal, 14)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .background(Color(NSColor.controlBackgroundColor).opacity(0.55))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
+                )
+                .animation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.25), value: activeMode)
             }
         }
         .onAppear {
             if settings.recognitionLanguages.isEmpty {
                 settings.recognitionLanguages = ["en-US"]
             }
+            if baselineMode == nil {
+                selectedMode = settings.defaultCaptureMode
+            }
         }
+    }
+    
+    // MARK: - Mode Specific Views
+    
+    private var ocrSettingsView: some View {
+        VStack(spacing: 20) {
+            SettingsRow(label: "Recognition Level", tooltip: "Fast: Character detection & small ML model.\nAccurate: Neural network for human-like string & line recognition.", zIndexValue: 10) {
+                Picker("", selection: $settings.recognitionLevel) {
+                    ForEach(RecognitionLevel.allCases) { level in
+                        Text(level.description).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 200)
+            }
+            
+            SettingsRow(label: "Language Correction", tooltip: "Applies Natural Language Processing (NLP) to minimize misreadings.\nNote: Not supported for Chinese. Disable this for code or technical symbols.", zIndexValue: 9) {
+                Toggle("", isOn: $settings.usesLanguageCorrection)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+            
+            SettingsRow(label: "Add Language", tooltip: "Add languages to improve recognition accuracy for mixed content.", zIndexValue: 8) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ModernDropdownPicker(
+                        title: "Add Language",
+                        items: availableLanguages.map { ($0, Locale.current.localizedString(forIdentifier: $0) ?? $0) },
+                        selection: .constant(""),
+                        width: 200,
+                        overrideTitle: availableLanguages.isEmpty ? "All added" : "Add Language...",
+                        isEnabled: !availableLanguages.isEmpty,
+                        accessibilityIdentifier: "settings-add-language-picker",
+                        onSelect: { language in
+                            addLanguage(language)
+                        }
+                    )
+                    
+                    if !settings.recognitionLanguages.isEmpty {
+                        ScrollView(.vertical, showsIndicators: settings.recognitionLanguages.count > 3) {
+                            VStack(spacing: 0) {
+                                ForEach(Array(settings.recognitionLanguages.enumerated()), id: \.element) { index, language in
+                                    LanguageRow(
+                                        language: language,
+                                        canRemove: settings.recognitionLanguages.count > 1,
+                                        isLast: index == settings.recognitionLanguages.count - 1
+                                    ) {
+                                        removeLanguage(language)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(width: 200)
+                        .frame(maxHeight: 110)
+                        .background(Color(NSColor.controlBackgroundColor).opacity(0.55))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    private var latexSettingsView: some View {
+        VStack(spacing: 20) {
+            SettingsRow(label: "Prettify Syntax", tooltip: "Compact redundant spaces around braces, operators, and subscripts in LaTeX output.", zIndexValue: 7) {
+                Toggle("", isOn: $settings.prettifyLatex)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+            
+            SettingsRow(label: "Fix Syntax", tooltip: "Automatically fix common syntax issues (unclosed braces, terminal delimiters, and unescaped %). Displays \"Fixed broken syntax\" in notification when triggered.", zIndexValue: 6) {
+                Toggle("", isOn: $settings.fixLatexSyntax)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+            
+            SettingsRow(label: "Model Memory", tooltip: "Determines how long the Pix2Text MFR 1.5 model remains in RAM after capture.\nImmediately: Frees memory right after every capture.\nNever: Keeps model resident for instantaneous subsequent inferences.", zIndexValue: 5) {
+                ModelUnloadSlider(policy: $settings.mfrUnloadPolicy)
+            }
+        }
+    }
+    
+    private var barcodeSettingsView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "qrcode.viewfinder")
+                .font(.system(size: 26))
+                .foregroundStyle(.secondary)
+            Text("QR & Barcode Recognition")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+            Text("Standard 1D and 2D barcodes are detected on-device via Apple Vision.\nNo machine learning model weights are loaded into memory.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+    }
+    
+    private var tableSettingsView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "tablecells")
+                .font(.system(size: 26))
+                .foregroundStyle(.secondary)
+            Text("Table Recognition")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+            Text("Structured columns and rows are clustered on-device from visual coordinates.\nConfigure table export formats (CSV, Markdown, TSV) in Quick Actions.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
     }
     
     private func addLanguage(_ language: String) {
@@ -866,7 +1078,7 @@ struct AboutSettingsView: View {
                 } else {
                     Image(systemName: "camera.viewfinder")
                         .font(.system(size: 64))
-                        .foregroundStyle(.blue.gradient)
+                        .foregroundStyle(Color.accentColor.gradient)
                 }
                 
                 // App Name, Version, and Copyright aligned left
@@ -1007,6 +1219,7 @@ struct HotkeyField: View {
     let placeholder: String
     @State private var isCapturing = false
     @State private var eventMonitor: Any?
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         Button(action: {
@@ -1019,8 +1232,8 @@ struct HotkeyField: View {
             HStack {
                 Spacer()
                 Text(isCapturing ? "Press keys..." : hotkey.displayString)
-                    .foregroundStyle(isCapturing ? .orange : .primary)
-                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isCapturing ? Color.accentColor : .primary)
+                    .font(.system(size: 12.5, weight: .medium))
                     .monospaced()
                 Spacer()
                 
@@ -1033,24 +1246,22 @@ struct HotkeyField: View {
                     .font(.caption)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color(.controlBackgroundColor))
-            .clipShape(.rect(cornerRadius: 6))
+            .padding(.horizontal, ModernDropdownTheme.horizontalPadding)
+            .padding(.vertical, 5)
+            .frame(width: 200)
+            .background(
+                RoundedRectangle(cornerRadius: ModernDropdownTheme.cornerRadius, style: .continuous)
+                    .fill(ModernDropdownTheme.backgroundColor(isActive: isCapturing, isDark: colorScheme == .dark))
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isCapturing ? Color.orange : Color.clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: ModernDropdownTheme.cornerRadius, style: .continuous)
+                    .stroke(
+                        isCapturing ? Color.accentColor : ModernDropdownTheme.borderColor(isActive: false, isDark: colorScheme == .dark),
+                        lineWidth: isCapturing ? 1.5 : ModernDropdownTheme.borderWidth
+                    )
             )
         }
         .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.primary.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(isCapturing ? Color.orange : Color.secondary.opacity(0.2), lineWidth: 1)
-        )
     }
     
     private func startCapturing() {
@@ -1093,38 +1304,41 @@ struct LanguageRow: View {
     let canRemove: Bool
     let isLast: Bool
     let onRemove: () -> Void
+    @State private var isHovered = false
     
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text(Locale.current.localizedString(forIdentifier: language) ?? language)
-                    .font(.system(size: 13))
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.primary)
                 
                 Spacer()
                 
                 if canRemove {
                     Button(action: onRemove) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(isHovered ? Color.red : Color.secondary.opacity(0.6))
                     }
                     .buttonStyle(.plain)
-                    .padding(4)
-                    .background(Color.secondary.opacity(0.1))
+                    .padding(3.5)
+                    .background(isHovered ? Color.red.opacity(0.12) : Color.secondary.opacity(0.1))
                     .clipShape(Circle())
+                    .onHover { isHovered = $0 }
                 } else {
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .opacity(0.5)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary.opacity(0.4))
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
             
             if !isLast {
                 Divider()
-                    .padding(.leading, 10)
+                    .opacity(0.25)
+                    .padding(.leading, 9)
             }
         }
     }
