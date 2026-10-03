@@ -28,6 +28,7 @@ class OverlayWindow: NSWindow {
     override func keyDown(with event: NSEvent) {
         // The key code for the Escape key is 53.
         if event.keyCode == 53 {
+            CGAssociateMouseAndMouseCursorPosition(1)
             // If Escape is pressed, call our closure.
             onEscape?()
         } else {
@@ -42,6 +43,9 @@ class ActionHostingView<Content: View>: NSHostingView<Content> {
     var onRightMouseDown: ((CGPoint, CGSize) -> Void)?
     var onRightMouseDragged: ((CGPoint) -> Void)?
     var onRightMouseUp: ((CGPoint) -> Void)?
+    private var initialLocalPoint: CGPoint?
+    private var accumulatedOffset: CGPoint = .zero
+    private var isMouseDisassociated = false
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
@@ -52,7 +56,60 @@ class ActionHostingView<Content: View>: NSHostingView<Content> {
         return CGPoint(x: point.x, y: isFlipped ? point.y : bounds.height - point.y)
     }
 
-    override func rightMouseDown(with event: NSEvent) { onRightMouseDown?(localPoint(for: event), bounds.size) }
-    override func rightMouseDragged(with event: NSEvent) { onRightMouseDragged?(localPoint(for: event)) }
-    override func rightMouseUp(with event: NSEvent) { onRightMouseUp?(localPoint(for: event)) }
+    private func restoreCursorAssociation() {
+        if isMouseDisassociated {
+            CGAssociateMouseAndMouseCursorPosition(1)
+            isMouseDisassociated = false
+        }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        let callPoint = localPoint(for: event)
+        initialLocalPoint = callPoint
+        accumulatedOffset = .zero
+
+        // Freeze cursor position at the call position while continuing to receive input vectors
+        CGAssociateMouseAndMouseCursorPosition(0)
+        isMouseDisassociated = true
+
+        onRightMouseDown?(callPoint, bounds.size)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        guard let initialLocalPoint else { return }
+        accumulatedOffset.x += event.deltaX
+        accumulatedOffset.y += event.deltaY
+        let effectivePoint = CGPoint(
+            x: initialLocalPoint.x + accumulatedOffset.x,
+            y: initialLocalPoint.y + accumulatedOffset.y
+        )
+        onRightMouseDragged?(effectivePoint)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        restoreCursorAssociation()
+        let effectivePoint: CGPoint
+        if let initialLocalPoint {
+            effectivePoint = CGPoint(
+                x: initialLocalPoint.x + accumulatedOffset.x,
+                y: initialLocalPoint.y + accumulatedOffset.y
+            )
+        } else {
+            effectivePoint = localPoint(for: event)
+        }
+        self.initialLocalPoint = nil
+        self.accumulatedOffset = .zero
+        onRightMouseUp?(effectivePoint)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            restoreCursorAssociation()
+        }
+    }
+
+    deinit {
+        restoreCursorAssociation()
+    }
 }

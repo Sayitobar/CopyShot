@@ -44,7 +44,7 @@ struct CaptureModeDescriptor: Identifiable, Hashable {
 
 enum RadialModeSelection {
     static let deadzoneRadius: CGFloat = 28
-    static let menuDiameter: CGFloat = 184
+    static let menuDiameter: CGFloat = 216
 
     /// Coordinates are relative to the press point, with positive y downward.
     /// The first descriptor is at twelve o'clock and following ones run clockwise.

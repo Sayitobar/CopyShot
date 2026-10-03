@@ -16,6 +16,7 @@ xcuserdata/
 *.xccheckout
 *.moved-aside
 *.hmap
+*.xcresult
 
 # Build artifacts
 build/

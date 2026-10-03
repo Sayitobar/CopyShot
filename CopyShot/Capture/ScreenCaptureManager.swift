@@ -172,6 +172,7 @@ class ScreenCaptureManager: NSObject {
     }
 
     private func closeOverlay() {
+        CGAssociateMouseAndMouseCursorPosition(1)
         let windowsToClose = self.overlayWindows
         self.overlayWindows = []
         windowsToClose.forEach { $0.orderOut(nil) }

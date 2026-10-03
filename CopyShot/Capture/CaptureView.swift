@@ -95,9 +95,16 @@ struct CaptureView: View {
                 switch phase {
                 case .active(let location):
                     self.isMouseInside = true
-                    self.mouseLocation = location
+                    if self.modeInteraction.pressPoint == nil {
+                        self.mouseLocation = location
+                    }
                 case .ended:
                     self.isMouseInside = false
+                }
+            }
+            .onChange(of: modeInteraction.pressPoint) { _, newPressPoint in
+                if let newPressPoint {
+                    self.mouseLocation = newPressPoint
                 }
             }
             .accessibilityElement(children: .contain)

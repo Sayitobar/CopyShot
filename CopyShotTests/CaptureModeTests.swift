@@ -62,7 +62,7 @@ struct CaptureModeTests {
         for (point, index) in targets {
             let interaction = CaptureModeInteraction()
             interaction.begin(at: press, in: canvas)
-            #expect(interaction.menuCenter == CGPoint(x: 500, y: 92))
+            #expect(interaction.menuCenter == CGPoint(x: 500, y: RadialModeSelection.menuDiameter / 2))
             interaction.move(to: point)
             #expect(interaction.candidateIndex == index)
             interaction.end(at: press)
