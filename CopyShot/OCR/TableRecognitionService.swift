@@ -1,16 +1,16 @@
 import AppKit
 
 enum TableRecognitionService {
-    static func recognize(_ image: CGImage, completion: @escaping (Result<CapturedTable, Error>) -> Void) {
-        OCRService.performOCRSegments(on: image) { result in
-            completion(result.map(cluster))
-        }
+    static func recognize(_ image: CGImage, cancellation: RecognitionCancellation = RecognitionCancellation(),
+                          completion: @escaping (Result<CapturedTable, Error>) -> Void) {
+        OCRService.recognize(on: image, cancellation: cancellation, transform: cluster, completion: completion)
     }
 
     static func cluster(_ segments: [OCRService.TextSegment]) -> CapturedTable {
         guard !segments.isEmpty else { return CapturedTable(rows: []) }
         struct Row {
             var centerY: CGFloat
+            var sumY: CGFloat
             var height: CGFloat
             var cells: [OCRService.TextSegment]
         }
@@ -20,9 +20,11 @@ enum TableRecognitionService {
                 abs(rows[$0].centerY - segment.bounds.midY) < abs(rows[$1].centerY - segment.bounds.midY)
             }), abs(rows[index].centerY - segment.bounds.midY) <= min(rows[index].height, segment.bounds.height) * 0.6 {
                 rows[index].cells.append(segment)
-                rows[index].centerY = rows[index].cells.map(\.bounds.midY).reduce(0, +) / CGFloat(rows[index].cells.count)
+                rows[index].sumY += segment.bounds.midY
+                rows[index].centerY = rows[index].sumY / CGFloat(rows[index].cells.count)
             } else {
-                rows.append(Row(centerY: segment.bounds.midY, height: segment.bounds.height, cells: [segment]))
+                rows.append(Row(centerY: segment.bounds.midY, sumY: segment.bounds.midY,
+                                height: segment.bounds.height, cells: [segment]))
             }
         }
 

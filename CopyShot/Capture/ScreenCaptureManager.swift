@@ -73,7 +73,7 @@ class ScreenCaptureManager: NSObject {
     /// Pre-warms ScreenCaptureKit and system privacy permissions in the background during app startup.
     func prewarm() {
         Task(priority: .background) {
-            _ = try? await SCShareableContent.current
+            _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         }
     }
 
@@ -97,7 +97,7 @@ class ScreenCaptureManager: NSObject {
     private func showOverlay(for requestID: UUID) async {
         guard requestState.isCurrent(requestID), overlayWindows.isEmpty else { return }
         do {
-            let content = try await SCShareableContent.current
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             guard requestState.isCurrent(requestID) else { return }
             streamContent = content
         } catch {

@@ -86,7 +86,7 @@ struct ActionPillView: View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
                 // Number badge for 1-9 direct keyboard access
-                if SettingsManager.shared.quickActionsConfig.showNumericShortcuts, let shortcut = action.shortcutNumber {
+                if SettingsManager.shared.presentationSettings.showNumericShortcuts, let shortcut = action.shortcutNumber {
                     Text("\(shortcut)")
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(.secondary)

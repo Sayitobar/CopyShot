@@ -5,6 +5,32 @@ import Testing
 @Suite("Capture mode routing")
 @MainActor
 struct CapturePipelineTests {
+    @Test("Replacing recognition cancels its work and still delivers the latest capture")
+    func replacementCancelsRecognition() throws {
+        let image = try #require(Self.makeImage())
+        var latest = UUID()
+        var tokens: [RecognitionCancellation] = []
+        var completions: [@MainActor (Result<CaptureResult, Error>) -> Void] = []
+        var delivered: [String] = []
+        let pipeline = CapturePipeline(isLatest: { $0 == latest }, cancellableRecognizers: [
+            .standardOCR: { _, token, completion in
+                tokens.append(token)
+                completions.append(completion)
+            }
+        ], deliver: { outcome, _ in
+            if case .result(.standardText(let text)) = outcome { delivered.append(text) }
+        })
+        pipeline.completeCapture(image: image, screen: nil, mode: .standardOCR, requestID: latest)
+        latest = UUID()
+        pipeline.cancelRecognition()
+        #expect(tokens[0].isCancelled)
+        pipeline.completeCapture(image: image, screen: nil, mode: .standardOCR, requestID: latest)
+        completions[0](.success(.standardText("old")))
+        completions[1](.success(.standardText("new")))
+        #expect(!tokens[1].isCancelled)
+        #expect(delivered == ["new"])
+    }
+
     @Test("An empty table has no clipboard content")
     func emptyTable() {
         #expect(CaptureResult.table(CapturedTable(rows: [["", " "]])).isEmpty)

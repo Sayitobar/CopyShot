@@ -42,21 +42,37 @@ final class CapturePipeline {
     }
 
     typealias Recognizer = (CGImage, @escaping @MainActor (Result<CaptureResult, Error>) -> Void) -> Void
+    typealias CancellableRecognizer = (CGImage, RecognitionCancellation, @escaping @MainActor (Result<CaptureResult, Error>) -> Void) -> Void
 
     private let isLatest: (UUID) -> Bool
-    private let recognizers: [CaptureMode: Recognizer]
+    private let recognizers: [CaptureMode: CancellableRecognizer]
     private let deliver: (Outcome, NSScreen?) -> Void
+    private var recognition: RecognitionCancellation?
 
-    init(isLatest: @escaping (UUID) -> Bool,
+    convenience init(isLatest: @escaping (UUID) -> Bool,
          recognizers: [CaptureMode: Recognizer],
          deliver: @escaping (Outcome, NSScreen?) -> Void) {
+        self.init(isLatest: isLatest, cancellableRecognizers: recognizers.mapValues { recognize in
+            { image, _, completion in recognize(image, completion) }
+        }, deliver: deliver)
+    }
+
+    init(isLatest: @escaping (UUID) -> Bool,
+         cancellableRecognizers: [CaptureMode: CancellableRecognizer],
+         deliver: @escaping (Outcome, NSScreen?) -> Void) {
         self.isLatest = isLatest
-        self.recognizers = recognizers
+        self.recognizers = cancellableRecognizers
         self.deliver = deliver
+    }
+
+    func cancelRecognition() {
+        recognition?.cancel()
+        recognition = nil
     }
 
     func completeCapture(image: CGImage?, screen: NSScreen?, mode: CaptureMode, requestID: UUID) {
         guard isLatest(requestID) else { return }
+        cancelRecognition()
         guard let image else {
             deliver(.cancelled, screen)
             return
@@ -66,8 +82,11 @@ final class CapturePipeline {
                                           userInfo: [NSLocalizedDescriptionKey: "No recognizer for \(mode.rawValue)."])), screen)
             return
         }
-        recognizer(image) { [weak self] result in
-            guard let self, self.isLatest(requestID) else { return }
+        let cancellation = RecognitionCancellation()
+        recognition = cancellation
+        recognizer(image, cancellation) { [weak self] result in
+            guard let self, !cancellation.isCancelled, self.isLatest(requestID) else { return }
+            if self.recognition === cancellation { self.recognition = nil }
             switch result {
             case .success(let content):
                 self.deliver(content.isEmpty ? .noContent(mode) : .result(content), screen)

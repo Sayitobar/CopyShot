@@ -11,6 +11,18 @@ import Carbon
 import AppKit // Import for NSEvent
 import SwiftUI
 import ServiceManagement
+import Observation
+
+@Observable
+final class DebugOverlayState {
+    var isEnabled = false
+}
+
+@Observable
+final class PresentationSettings {
+    var appearance: AppAppearance = .system
+    var showNumericShortcuts = true
+}
 
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system = "System"
@@ -100,6 +112,8 @@ class SettingsManager: ObservableObject {
         return SettingsManager()
     }()
     private let defaults: UserDefaults
+    let debugOverlay = DebugOverlayState()
+    let presentationSettings = PresentationSettings()
     
     // @Published properties will automatically update any SwiftUI views that use them.
     @Published var recognitionLevel: RecognitionLevel {
@@ -134,6 +148,7 @@ class SettingsManager: ObservableObject {
     
     @Published var appearance: AppAppearance {
         didSet {
+            presentationSettings.appearance = appearance
             defaults.set(appearance.rawValue, forKey: SettingsKeys.appAppearance)
         }
     }
@@ -167,11 +182,14 @@ class SettingsManager: ObservableObject {
     }
     
     /// Developer debug layout overlay state (toggled via ⇧⌥⌘D when Settings is open)
-    @Published var showDebugOverlay: Bool = false
+    @Published var showDebugOverlay: Bool = false {
+        didSet { debugOverlay.isEnabled = showDebugOverlay }
+    }
     
     /// Quick Actions configuration (ordering, enabled state, parameters)
     @Published var quickActionsConfig: QuickActionsConfig {
         didSet {
+            presentationSettings.showNumericShortcuts = quickActionsConfig.showNumericShortcuts
             if let data = try? JSONEncoder().encode(quickActionsConfig) {
                 defaults.set(data, forKey: SettingsKeys.quickActionsConfig)
             }
@@ -356,6 +374,8 @@ class SettingsManager: ObservableObject {
         } else {
             self.prewarmRecognition = defaults.bool(forKey: SettingsKeys.prewarmRecognition)
         }
+        presentationSettings.appearance = appearance
+        presentationSettings.showNumericShortcuts = quickActionsConfig.showNumericShortcuts
     }
 
     // MARK: - Capture Mode Resolution

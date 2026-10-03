@@ -9,6 +9,19 @@ import Foundation
 import SwiftUI
 import Combine
 import AppKit
+import Observation
+
+@Observable
+private final class ShelfPresentationState {
+    var actions: [QuickAction] = []
+    var accentColor: Color = .orange
+    var activeSubmenuID: String?
+    var hoveringSubShelf = false
+    var hoveringMainShelf = false
+    var mainScrollHeight: CGFloat?
+    var subScrollHeight: CGFloat?
+    var subViewportHeight: CGFloat = 0
+}
 
 /// Specialized borderless floating window that can become key to intercept 1-9 quick action hotkeys on hover without warning
 final class NotificationHUDWindow: NSWindow {
@@ -84,22 +97,41 @@ class NotificationPresenter: ObservableObject {
     @Published var notificationFullBody: String? = nil
     @Published var notificationIconName: String = ""
     @Published var notificationCustomIcon: ActionIcon? = nil
-    @Published var notificationAccentColor: Color = .orange
+    @Published var notificationAccentColor: Color = .orange {
+        didSet { shelfState.accentColor = notificationAccentColor }
+    }
     @Published var isShelfOpen: Bool = false
-    @Published var activeSubmenu: QuickAction? = nil
-    @Published var isHoveringSubShelf: Bool = false
+    @Published var activeSubmenu: QuickAction? = nil {
+        didSet { shelfState.activeSubmenuID = activeSubmenu?.id }
+    }
+    @Published var isHoveringSubShelf: Bool = false {
+        didSet { shelfState.hoveringSubShelf = isHoveringSubShelf }
+    }
     
     var targetScreen: NSScreen? = nil
     var supportsQuickActions: Bool = false
-    var quickActions: [QuickAction] = QuickAction.defaultActions
+    var quickActions: [QuickAction] = [] {
+        didSet { shelfState.actions = quickActions }
+    }
     var currentCaptureMode: CaptureMode = .standardOCR
     
     private var mainShelfNaturalHeight: CGFloat = 0
     private var subShelfNaturalHeight: CGFloat = 0
+    private let shelfMeasurements = ShelfLayout.Measurements()
+    private let shelfState = ShelfPresentationState()
     private var subShelfInteractiveFrame: NSRect?
-    @Published fileprivate var mainShelfScrollHeight: CGFloat?
-    @Published fileprivate var subShelfScrollHeight: CGFloat?
-    @Published fileprivate var subShelfViewportHeight: CGFloat = 0
+    private var mainShelfScrollHeight: CGFloat? {
+        get { shelfState.mainScrollHeight }
+        set { shelfState.mainScrollHeight = newValue }
+    }
+    private var subShelfScrollHeight: CGFloat? {
+        get { shelfState.subScrollHeight }
+        set { shelfState.subScrollHeight = newValue }
+    }
+    private var subShelfViewportHeight: CGFloat {
+        get { shelfState.subViewportHeight }
+        set { shelfState.subViewportHeight = newValue }
+    }
     private var shelfCloseToken = UUID()
     private var dismissTimer: AnyCancellable?
     private var notificationDuration: TimeInterval = 3.0
@@ -112,7 +144,9 @@ class NotificationPresenter: ObservableObject {
     private var keyEventMonitor: Any?
     
     private var isHoveringNotification: Bool = false
-    @Published var isHoveringShelf: Bool = false
+    @Published var isHoveringShelf: Bool = false {
+        didSet { shelfState.hoveringMainShelf = isHoveringShelf }
+    }
     private var currentHoveredAction: QuickAction?
     private var hoverOutWorkItem: DispatchWorkItem?
     private var hoverGraceTimer: DispatchWorkItem?
@@ -203,9 +237,17 @@ class NotificationPresenter: ObservableObject {
         let context = actionContext ?? ActionContext(text: fullBody ?? body, mode: captureMode)
         self.currentActionContext = context
         self.currentCaptureMode = context.mode
-        self.quickActions = quickActions ?? ActionRegistry.shared.actions(context: context, config: config)
-        mainShelfNaturalHeight = ShelfLayout.naturalHeight(actions: self.quickActions, submenu: false)
-        subShelfNaturalHeight = self.quickActions.compactMap(\.subActions).map { ShelfLayout.naturalHeight(actions: $0, submenu: true) }.max() ?? 0
+        self.quickActions = supportsQuickActions && config.isEnabled
+            ? (quickActions ?? ActionRegistry.shared.actions(context: context, config: config)) : []
+        if !self.quickActions.isEmpty {
+            let heights = shelfMeasurements.prepare(actions: self.quickActions)
+            mainShelfNaturalHeight = heights.main
+            subShelfNaturalHeight = heights.submenu
+        } else {
+            mainShelfNaturalHeight = 0
+            subShelfNaturalHeight = 0
+            shelfMeasurements.invalidate()
+        }
         self.supportsQuickActions = supportsQuickActions && config.isEnabled && !self.quickActions.isEmpty
         self.notificationDuration = max(0, duration)
         self.isShelfOpen = false
@@ -374,7 +416,7 @@ class NotificationPresenter: ObservableObject {
     
     private func setupMainShelfHostingView() {
         if shelfHostingView == nil {
-            let container = ActionShelfContainerView(presenter: self)
+            let container = ActionShelfContainerView(state: shelfState, presenter: self)
             let host = NotificationHostingView(rootView: AnyView(container))
             shelfHostingView = host
             shelfWindow?.contentView = host
@@ -396,9 +438,10 @@ class NotificationPresenter: ObservableObject {
         let subX = shelf.frame.origin.x - (shelfPillsWidth + shelfColumnGap)
         
         let subHeight = ShelfLayout.viewportHeight(naturalHeight: subShelfNaturalHeight, availableHeight: shelf.frame.maxY - screen.visibleFrame.minY)
-        let activeHeight = min(subHeight, ShelfLayout.naturalHeight(actions: subActions, submenu: true))
+        let naturalHeight = shelfMeasurements.submenuHeight(for: action)
+        let activeHeight = min(subHeight, naturalHeight)
         subShelfViewportHeight = subHeight
-        subShelfScrollHeight = activeHeight < ShelfLayout.naturalHeight(actions: subActions, submenu: true) ? max(0, activeHeight - shelfPaddingTop - shelfPaddingBottom) : nil
+        subShelfScrollHeight = activeHeight < naturalHeight ? max(0, activeHeight - shelfPaddingTop - shelfPaddingBottom) : nil
         let subY = shelf.frame.maxY - subHeight
         subShelfInteractiveFrame = NSRect(x: subX, y: shelf.frame.maxY - activeHeight, width: subWidth, height: activeHeight)
         
@@ -421,7 +464,7 @@ class NotificationPresenter: ObservableObject {
             subShelfWindow?.setFrame(subFrame, display: true)
         }
         
-        let container = ActionSubShelfContainerView(presenter: self, subActions: subActions)
+        let container = ActionSubShelfContainerView(state: shelfState, presenter: self, subActions: subActions)
         if let host = subShelfHostingView {
             host.rootView = AnyView(container)
         } else {
@@ -463,6 +506,7 @@ class NotificationPresenter: ObservableObject {
             Task { @MainActor in
                 guard let self, self.subShelfCloseToken == closeToken else { return }
                 subShelf.orderOut(nil)
+                subShelf.contentView = nil
                 self.subShelfHostingView = nil
                 self.subShelfInteractiveFrame = nil
                 completion?()
@@ -476,6 +520,7 @@ class NotificationPresenter: ObservableObject {
         isHoveringSubShelf = false
         subShelfInteractiveFrame = nil
         subShelfWindow?.orderOut(nil)
+        subShelfWindow?.contentView = nil
         subShelfHostingView = nil
     }
     
@@ -575,6 +620,8 @@ class NotificationPresenter: ObservableObject {
                 guard let self, self.sessionGeneration == generation, self.shelfCloseToken == closeToken else { return }
                 shelf.orderOut(nil)
                 self.subShelfWindow?.orderOut(nil)
+                shelf.contentView = nil
+                self.subShelfWindow?.contentView = nil
                 self.shelfHostingView = nil
                 self.subShelfHostingView = nil
                 self.activeSubmenu = nil
@@ -595,6 +642,8 @@ class NotificationPresenter: ObservableObject {
         isShelfOpen = false
         shelfWindow?.orderOut(nil)
         subShelfWindow?.orderOut(nil)
+        shelfWindow?.contentView = nil
+        subShelfWindow?.contentView = nil
         shelfHostingView = nil
         subShelfHostingView = nil
     }
@@ -628,7 +677,20 @@ class NotificationPresenter: ObservableObject {
         dismissTimer?.cancel()
         dismissTimer = nil
         notificationWindow?.orderOut(nil)
+        notificationWindow?.contentView = nil
         hostingView = nil
+        hoverOutWorkItem?.cancel()
+        hoverOutWorkItem = nil
+        currentHoveredAction = nil
+        currentActionContext = nil
+        notificationTitle = ""
+        notificationSubtitle = nil
+        notificationBody = ""
+        notificationFullBody = nil
+        notificationCustomIcon = nil
+        quickActions = []
+        supportsQuickActions = false
+        targetScreen = nil
     }
     
     private func hideNotificationWithAnimation(preservingSession: Bool = false, completion: (() -> Void)? = nil) {
@@ -832,15 +894,16 @@ class NotificationPresenter: ObservableObject {
 // MARK: - Action Shelf Reactive Container
 
 private struct ActionShelfContainerView: View {
-    @ObservedObject var presenter: NotificationPresenter
+    let state: ShelfPresentationState
+    weak var presenter: NotificationPresenter?
     
     var body: some View {
         ActionShelfView(
-            actions: presenter.quickActions,
-            accentColor: presenter.notificationAccentColor,
-            viewportHeight: presenter.mainShelfScrollHeight,
-            activeSubmenuId: presenter.activeSubmenu?.id,
-            isSubShelfHovered: presenter.isHoveringSubShelf,
+            actions: state.actions,
+            accentColor: state.accentColor,
+            viewportHeight: state.mainScrollHeight,
+            activeSubmenuId: state.activeSubmenuID,
+            isSubShelfHovered: state.hoveringSubShelf,
             onActionSelected: { [weak presenter] action in
                 presenter?.triggerQuickAction(action)
             },
@@ -851,20 +914,21 @@ private struct ActionShelfContainerView: View {
                 presenter?.handleShelfHover(hovering)
             }
         )
-        .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
+        .preferredColorScheme(SettingsManager.shared.presentationSettings.appearance.colorScheme)
     }
 }
 
 private struct ActionSubShelfContainerView: View {
-    @ObservedObject var presenter: NotificationPresenter
+    let state: ShelfPresentationState
+    weak var presenter: NotificationPresenter?
     let subActions: [QuickAction]
     
     var body: some View {
         ActionSubShelfView(
             subActions: subActions,
-            accentColor: presenter.notificationAccentColor,
-            viewportHeight: presenter.subShelfScrollHeight,
-            isMainShelfHovered: presenter.isHoveringShelf,
+            accentColor: state.accentColor,
+            viewportHeight: state.subScrollHeight,
+            isMainShelfHovered: state.hoveringMainShelf,
             onActionSelected: { [weak presenter] selectedAction in
                 presenter?.triggerQuickAction(selectedAction)
             },
@@ -872,9 +936,9 @@ private struct ActionSubShelfContainerView: View {
                 presenter?.handleSubShelfHover(hovering)
             }
         )
-        .frame(height: presenter.subShelfViewportHeight, alignment: .top)
+        .frame(height: state.subViewportHeight, alignment: .top)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("qa-submenu-content")
-        .preferredColorScheme(SettingsManager.shared.appearance.colorScheme)
+        .preferredColorScheme(SettingsManager.shared.presentationSettings.appearance.colorScheme)
     }
 }

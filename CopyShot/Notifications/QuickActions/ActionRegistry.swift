@@ -139,10 +139,7 @@ struct BuiltInActionProvider: ActionProvider {
                      submenu: Bool = false, parameters: [ActionParameter] = [], translation: Bool = false) -> ActionDefinition {
         definition(id, title, description, icon, modes: [.standardOCR], enabled: [.standardOCR], submenu: submenu,
                    parameters: parameters, translation: translation) { context, config in
-            var isolated = config
-            isolated.actionOrder = [id]
-            isolated.disabledActionIds = isolated.actionOrder.filter { $0 != id }
-            return OCRActionFactory.actions(for: context.text, config: isolated).first { $0.id == id }
+            OCRActionFactory.action(id: id, text: context.text, config: config)
         }
     }
 

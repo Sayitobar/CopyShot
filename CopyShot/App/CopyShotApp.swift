@@ -23,9 +23,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         isLatest: { [weak self] requestID in
             self?.captureManager.isLatestCapture(requestID) ?? false
         },
-        recognizers: [
-            .standardOCR: { image, completion in
-                OCRService.performOCR(on: image) { result in
+        cancellableRecognizers: [
+            .standardOCR: { image, cancellation, completion in
+                OCRService.performOCR(on: image, cancellation: cancellation) { result in
                     Task { @MainActor in
                         switch result {
                         case .success(let text): completion(.success(.standardText(text)))
@@ -34,13 +34,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     }
                 }
             },
-            .qrBarcode: { image, completion in
-                BarcodeRecognitionService.recognize(image) { result in
+            .qrBarcode: { image, cancellation, completion in
+                BarcodeRecognitionService.recognize(image, cancellation: cancellation) { result in
                     Task { @MainActor in completion(result.map(CaptureResult.barcodes)) }
                 }
             },
-            .latex: { [weak self] image, completion in
-                self?.formulaService.recognize(image) { result in
+            .latex: { [weak self] image, cancellation, completion in
+                self?.formulaService.recognize(image, cancellation: cancellation) { result in
                     Task { @MainActor in
                         completion(result.map {
                             CaptureResult.latex(
@@ -51,8 +51,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     }
                 }
             },
-            .table: { image, completion in
-                TableRecognitionService.recognize(image) { result in
+            .table: { image, cancellation, completion in
+                TableRecognitionService.recognize(image, cancellation: cancellation) { result in
                     Task { @MainActor in completion(result.map(CaptureResult.table)) }
                 }
             }
@@ -79,6 +79,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         
         captureManager.onSessionReset = { [weak self] in
+            self?.capturePipeline.cancelRecognition()
             self?.recognitionPrewarmer.resetSession()
         }
         
@@ -253,7 +254,6 @@ struct CopyShotApp: App {
     
     // We need to access our settings to pass them to the SettingsView.
     @StateObject private var settings = SettingsManager.shared
-    @StateObject private var notificationPresenter = FeedbackManager.shared.presenter
     
     // Sparkle auto-updater controller wrapper
     @StateObject private var updaterViewModel = UpdaterViewModel()

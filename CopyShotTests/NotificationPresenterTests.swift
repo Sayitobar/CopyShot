@@ -7,6 +7,31 @@ import AppKit
 @Suite("Notification presentation options", .serialized)
 @MainActor
 struct NotificationPresenterTests {
+    @Test("Dismissal releases the hosted HUD and its capture payload")
+    func dismissalReleasesContent() throws {
+        let before = Set(NSApp.windows.map(ObjectIdentifier.init))
+        let presenter = NotificationPresenter()
+        presenter.showNotification(title: "Test", body: "preview", fullBody: String(repeating: "payload", count: 1000),
+                                   accentColor: .green, supportsQuickActions: true)
+        let window = try #require(NSApp.windows.first {
+            !before.contains(ObjectIdentifier($0)) && $0.contentView is NotificationHostingView<AnyView>
+        })
+        presenter.dismissNotification()
+        #expect(window.contentView == nil)
+        #expect(presenter.currentActionContext == nil)
+        #expect(presenter.notificationFullBody == nil)
+        #expect(presenter.quickActions.isEmpty)
+    }
+
+    @Test("A notification without Quick Actions does not retain an action catalog")
+    func noUnusedActionCatalog() {
+        let presenter = NotificationPresenter()
+        presenter.showNotification(title: "Cancelled", body: "No capture.", accentColor: .red)
+        defer { presenter.dismissNotification() }
+        #expect(presenter.quickActions.isEmpty)
+        #expect(!presenter.supportsQuickActions)
+    }
+
     @Test("An explicit action list replaces generated defaults")
     func usesProvidedQuickActions() {
         let presenter = NotificationPresenter(configProvider: { QuickActionsConfig() })

@@ -15,6 +15,22 @@ import Vision
 @Suite("OCRService Tests")
 struct OCRServiceTests {
 
+    @Test("Reconstruction runs off main while completion remains on main")
+    @MainActor
+    func reconstructionWorker() async throws {
+        let image = try #require(createBlankImage())
+        let count = try await withCheckedThrowingContinuation { continuation in
+            OCRService.recognize(on: image, cancellation: RecognitionCancellation(), transform: { segments in
+                #expect(!Thread.isMainThread)
+                return segments.count
+            }, completion: { result in
+                #expect(Thread.isMainThread)
+                continuation.resume(with: result)
+            })
+        }
+        #expect(count == 0)
+    }
+
     @Test("Mixed-height observations retain top-to-bottom, left-to-right reading order")
     func testMixedHeightReadingOrder() {
         let segments: [OCRService.TextSegment] = [

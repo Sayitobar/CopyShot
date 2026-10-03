@@ -16,7 +16,25 @@ struct FormulaResult: Equatable, CustomStringConvertible {
 
 protocol FormulaRecognizing: AnyObject {
     func prewarm()
+    func prewarm(completion: @escaping (Bool) -> Void)
     func recognize(_ image: CGImage, completion: @escaping (Result<FormulaResult, Error>) -> Void)
+    func recognize(_ image: CGImage, cancellation: RecognitionCancellation,
+                   completion: @escaping (Result<FormulaResult, Error>) -> Void)
+}
+
+extension FormulaRecognizing {
+    func prewarm(completion: @escaping (Bool) -> Void) {
+        prewarm()
+        completion(true)
+    }
+    func recognize(_ image: CGImage, cancellation: RecognitionCancellation,
+                   completion: @escaping (Result<FormulaResult, Error>) -> Void) {
+        guard !cancellation.isCancelled else { return }
+        recognize(image) { result in
+            guard !cancellation.isCancelled else { return }
+            completion(result)
+        }
+    }
 }
 
 enum FormulaRecognitionError: LocalizedError {
@@ -40,6 +58,8 @@ enum FormulaRecognitionError: LocalizedError {
 /// Sessions load lazily and remain cached until 60 seconds idle or memory pressure.
 final class FormulaRecognitionService: FormulaRecognizing {
     private let queue = DispatchQueue(label: "CopyShot.MFR", qos: .userInitiated)
+    private let worker: RecognitionWorker
+    private let prewarmCoalescer = PrewarmCoalescer<Bool>()
     private lazy var modelCache = IdleModelCache(queue: queue, policy: initialPolicy, load: Self.loadModel)
     private let initialPolicy: ModelUnloadPolicy
     private let memoryPressure: DispatchSourceMemoryPressure
@@ -47,6 +67,7 @@ final class FormulaRecognitionService: FormulaRecognizing {
 
     init(policy: ModelUnloadPolicy = SettingsManager.shared.mfrUnloadPolicy) {
         self.initialPolicy = policy
+        worker = RecognitionWorker(queue: queue)
         memoryPressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: queue)
         memoryPressure.setEventHandler { [weak self] in
             self?.modelCache.release()
@@ -81,24 +102,40 @@ final class FormulaRecognitionService: FormulaRecognizing {
 
     /// Loads and caches MFR ONNX sessions in the background, starting the idle eviction timer.
     func prewarm() {
-        queue.async { [weak self] in
-            guard let self else { return }
-            do {
-                _ = try self.modelCache.value()
-                self.modelCache.scheduleIdleRelease()
-            } catch {
-                #if DEBUG
-                debugPrint("[MFR 1.5] prewarm failed: \(error.localizedDescription)")
-                #endif
+        prewarm(completion: { _ in })
+    }
+
+    func prewarm(completion: @escaping (Bool) -> Void) {
+        prewarmCoalescer.run(key: true, start: { done in
+            queue.async { [weak self] in
+                guard let self else { done(false); return }
+                do {
+                    _ = try self.modelCache.value()
+                    self.modelCache.scheduleIdleRelease()
+                    done(true)
+                } catch {
+                    #if DEBUG
+                    debugPrint("[MFR 1.5] prewarm failed: \(error.localizedDescription)")
+                    #endif
+                    done(false)
+                }
             }
-        }
+        }, completion: completion)
     }
 
     func recognize(_ image: CGImage, completion: @escaping (Result<FormulaResult, Error>) -> Void) {
-        queue.async { [self] in
+        recognize(image, cancellation: RecognitionCancellation(), completion: completion)
+    }
+
+    func recognize(_ image: CGImage, cancellation: RecognitionCancellation,
+                   completion: @escaping (Result<FormulaResult, Error>) -> Void) {
+        worker.submit(cancellation: cancellation) { [self] in
             defer { modelCache.scheduleIdleRelease() }
-            let result = autoreleasepool { Result { try recognizeSync(image) } }
-            DispatchQueue.main.async { completion(result) }
+            let result = autoreleasepool { Result { try recognizeSync(image, cancellation: cancellation) } }
+            DispatchQueue.main.async {
+                guard !cancellation.isCancelled else { return }
+                completion(result)
+            }
         }
     }
 
@@ -113,11 +150,12 @@ final class FormulaRecognitionService: FormulaRecognizing {
         return model
     }
 
-    private func recognizeSync(_ image: CGImage) throws -> FormulaResult {
+    private func recognizeSync(_ image: CGImage, cancellation: RecognitionCancellation) throws -> FormulaResult {
+        try cancellation.checkCancellation()
         let model = try modelCache.value()
+        try cancellation.checkCancellation()
         let start = CFAbsoluteTimeGetCurrent()
-        let pixelValues = try Self.preprocess(image)
-        let encoderInput = try Self.value(pixelValues, shape: [1, 3, 384, 384])
+        let encoderInput = try Self.encoderInput(image)
         let encoded = try model.encoder.run(withInputs: ["pixel_values": encoderInput],
                                             outputNames: [model.encoderOutput], runOptions: nil)
         guard let hidden = encoded[model.encoderOutput] else {
@@ -127,6 +165,7 @@ final class FormulaRecognitionService: FormulaRecognizing {
         var ids: [Int64] = [1] // MFR 1.5 decoder_start_token_id
         var reachedEndToken = false
         for _ in 0..<1024 {
+            try cancellation.checkCancellation()
             // Decoder tensors are temporary; drain their Objective-C autoreleases each token.
             let next = try autoreleasepool {
                 let inputIDs = try Self.value(ids, shape: [1, NSNumber(value: ids.count)])
@@ -173,19 +212,22 @@ final class FormulaRecognitionService: FormulaRecognizing {
         return FormulaResult(formula: latex, wasSyntaxFixed: wasSyntaxFixed)
     }
 
-    private static func value<T>(_ values: [T], shape: [NSNumber], type: ORTTensorElementDataType) throws -> ORTValue {
-        let data = values.withUnsafeBufferPointer { buffer in
-            Data(bytes: buffer.baseAddress!, count: buffer.count * MemoryLayout<T>.stride)
-        }
-        return try ORTValue(tensorData: NSMutableData(data: data), elementType: type, shape: shape)
-    }
-
-    private static func value(_ values: [Float], shape: [NSNumber]) throws -> ORTValue {
-        try value(values, shape: shape, type: .float)
-    }
-
     private static func value(_ values: [Int64], shape: [NSNumber]) throws -> ORTValue {
-        try value(values, shape: shape, type: .int64)
+        let data = values.withUnsafeBufferPointer { buffer in
+            NSMutableData(bytes: buffer.baseAddress, length: buffer.count * MemoryLayout<Int64>.stride)
+        }
+        return try ORTValue(tensorData: data, elementType: .int64, shape: shape)
+    }
+
+    static func encoderInput(_ image: CGImage) throws -> ORTValue {
+        let count = 3 * 384 * 384
+        guard let data = NSMutableData(length: count * MemoryLayout<Float>.stride) else {
+            throw FormulaRecognitionError.invalidModel("Could not allocate encoder input")
+        }
+        let values = UnsafeMutableBufferPointer(start: data.mutableBytes.assumingMemoryBound(to: Float.self), count: count)
+        try normalize(image, into: values)
+        // ORTValue retains its external NSMutableData for the complete tensor lifetime.
+        return try ORTValue(tensorData: data, elementType: .float, shape: [1, 3, 384, 384])
     }
 
     private static func greedyLastToken(_ output: ORTValue) throws -> Int64 {
@@ -209,6 +251,12 @@ final class FormulaRecognitionService: FormulaRecognizing {
     }
 
     static func preprocess(_ image: CGImage) throws -> [Float] {
+        var tensor = [Float](repeating: 0, count: 3 * 384 * 384)
+        try tensor.withUnsafeMutableBufferPointer { try normalize(image, into: $0) }
+        return tensor
+    }
+
+    private static func normalize(_ image: CGImage, into tensor: UnsafeMutableBufferPointer<Float>) throws {
         let side = 384
         var pixels = [UInt8](repeating: 0, count: side * side * 4)
         let success = pixels.withUnsafeMutableBytes { bytes -> Bool in
@@ -226,13 +274,11 @@ final class FormulaRecognitionService: FormulaRecognizing {
         guard success else { throw FormulaRecognitionError.invalidModel("Could not preprocess image") }
         // DeiTImageProcessor for this model: RGB, 384², rescale by 1/255,
         // normalize with mean and standard deviation 0.5, channel-first.
-        var tensor = [Float](repeating: 0, count: 3 * side * side)
         for pixel in 0..<(side * side) {
             for channel in 0..<3 {
                 tensor[channel * side * side + pixel] = Float(pixels[pixel * 4 + channel]) / 127.5 - 1
             }
         }
-        return tensor
     }
 }
 

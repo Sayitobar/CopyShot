@@ -34,12 +34,12 @@ enum DebugZoneType {
 
 /// View modifier rendering a semi-transparent dashed outline and badge for the layout zone when debug mode is enabled.
 struct DebugZoneModifier: ViewModifier {
-    @ObservedObject private var settings = SettingsManager.shared
+    private let state = SettingsManager.shared.debugOverlay
     let label: String
     let type: DebugZoneType
     
     func body(content: Content) -> some View {
-        if settings.showDebugOverlay {
+        if state.isEnabled {
             content.overlay(
                 ZStack(alignment: .topLeading) {
                     Rectangle()

@@ -30,6 +30,7 @@ jobs:
             -destination "platform=macOS" \
             -only-testing:CopyShotTests \
             -skip-testing:CopyShotTests/PipelineBenchmarkTests \
+            -skip-testing:CopyShotTests/OptimizationBenchmarkTests \
             -resultBundlePath TestResults.xcresult
 
       - name: Upload Test Results

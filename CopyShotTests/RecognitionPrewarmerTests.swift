@@ -27,6 +27,56 @@ private final class MockFormulaService: FormulaRecognizing {
 @MainActor
 struct RecognitionPrewarmerTests {
 
+    @Test("OCR and table share warm-up, configuration changes rewarm, and in-flight work spans resets")
+    func sharedEngineAndConfiguration() async throws {
+        let suite = "CopyShotTests.enginePrewarm.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsManager(defaults: defaults)
+        settings.prewarmRecognition = true
+        let coalescer = PrewarmCoalescer<OCRService.Configuration>()
+        var starts = 0
+        var finishes: [(Bool) -> Void] = []
+        let prewarmer = RecognitionPrewarmer(formulaService: MockFormulaService(), settings: settings,
+                                            ocrPrewarm: { configuration, completion in
+            coalescer.run(key: configuration, start: { done in
+                starts += 1
+                finishes.append(done)
+            }, completion: completion)
+        })
+        prewarmer.prewarm(mode: .standardOCR)
+        prewarmer.prewarm(mode: .table)
+        #expect(starts == 1)
+        prewarmer.resetSession()
+        prewarmer.prewarm(mode: .table)
+        #expect(starts == 1)
+        settings.usesLanguageCorrection.toggle()
+        prewarmer.prewarm(mode: .standardOCR)
+        #expect(starts == 2)
+        finishes[1](false)
+        for _ in 0..<100 where starts == 2 {
+            await Task.yield()
+            prewarmer.prewarm(mode: .standardOCR)
+        }
+        #expect(starts == 3)
+        finishes[0](false)
+        finishes[2](true)
+        for _ in 0..<20 { await Task.yield() }
+        // The first session's failed OCR callback must not clear the current OCR mode.
+        #expect(prewarmer.warmedModesInSession.contains(.standardOCR))
+        #expect(!prewarmer.warmedModesInSession.contains(.table))
+        prewarmer.prewarm(mode: .standardOCR)
+        #expect(starts == 3)
+        settings.recognitionLanguages = ["de-DE"]
+        prewarmer.prewarm(mode: .standardOCR)
+        #expect(starts == 4)
+        settings.recognitionLevel = settings.recognitionLevel == .accurate ? .fast : .accurate
+        prewarmer.prewarm(mode: .table)
+        #expect(starts == 5)
+        finishes[3](true)
+        finishes[4](true)
+    }
+
     @Test("Prewarming is skipped when disabled in Settings")
     func testPrewarmRespectsSettingsToggle() throws {
         let suite = "CopyShotTests.prewarmToggle.\(UUID().uuidString)"

@@ -22,6 +22,13 @@ struct FormulaRecognitionTests {
         #expect(tensor[0] > 0.9) // red at top left
         #expect(tensor[blueChannel] < -0.9) // no blue at top left
         #expect(tensor[bottomLeft] > 0.9) // blue at bottom left
+        let input = try FormulaRecognitionService.encoderInput(image)
+        let info = try input.tensorTypeAndShapeInfo()
+        #expect(info.shape.map(\.intValue) == [1, 3, 384, 384])
+        let data = try input.tensorData()
+        #expect(data.length == tensor.count * MemoryLayout<Float>.stride)
+        let values = UnsafeBufferPointer(start: data.bytes.assumingMemoryBound(to: Float.self), count: tensor.count)
+        #expect(Array(values).map(\.bitPattern) == tensor.map(\.bitPattern))
     }
 
     @Test("The optional local model completes one real formula inference")
