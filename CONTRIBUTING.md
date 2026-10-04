@@ -41,13 +41,14 @@ The codebase is organized into domain-focused directories under `CopyShot/`:
 
 ```text
 CopyShot/
-├── App/             # App entry point (@main CopyShotApp), AppDelegate, Constants, Icon states
-├── Capture/         # ScreenCaptureKit pipeline, OverlayWindow, CaptureView drag selection
-├── OCR/             # Vision framework OCR engine & CoreImage preprocessing
-├── Clipboard/       # NSPasteboard interaction
+├── App/             # App entry point (@main CopyShotApp), AppDelegate, pipeline coordinator, icon states
+├── Capture/         # ScreenCaptureKit pipeline, OverlayWindow, CaptureView, RadialCaptureMenu, RecognitionPrewarmer
+├── OCR/             # Vision OCR, Barcode detection, Pix2Text MFR 1.5 (ONNX), Table spatial clustering, LaTeXNormalizer
+├── Clipboard/       # NSPasteboard interaction and formatting
 ├── Hotkeys/         # Global shortcut registration via Carbon Events
 ├── Notifications/   # Floating frosted-glass HUD notification & audio feedback
-├── Settings/        # SwiftUI Settings window, tabs, and SettingsManager state
+│   └── QuickActions/ # Modular action shelf, case transforms, table exports, translation service, icon renderers
+├── Settings/        # Bespoke SwiftUI Settings window, mode switcher, dynamic height probe, SettingsManager
 └── Assets.xcassets  # App icons and menu bar symbols
 ```
 
@@ -64,12 +65,15 @@ CopyShot/
 CopyShot uses Apple's **Swift Testing** framework (`import Testing`) for fast, concurrent, and robust unit tests.
 
 ### Running Tests Locally
-Run the unit test suite from the terminal:
+Run the fast unit test suite from the terminal (skipping heavy benchmarks):
 ```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 xcodebuild test \
   -scheme CopyShot \
   -destination 'platform=macOS' \
-  -only-testing:CopyShotTests
+  -only-testing:CopyShotTests \
+  -skip-testing:CopyShotTests/PipelineBenchmarkTests \
+  -skip-testing:CopyShotTests/OptimizationBenchmarkTests
 ```
 
 Or press **Cmd + U** inside Xcode.

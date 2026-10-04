@@ -12,7 +12,7 @@ import Sparkle
 // By marking the AppDelegate with @MainActor, we ensure all its methods
 // and properties are on the main thread, resolving the core conflict.
 @MainActor
-class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, ObservableObject {
     
     // The manager is now created on the main actor, which is safe.
     private let captureManager = ScreenCaptureManager()

@@ -2,7 +2,7 @@
   <img src="CopyShot/Assets.xcassets/AppIcon.appiconset/v2.5.png" width="140" alt="CopyShot Logo" style="margin-right: 20px; vertical-align: middle;"/>
   <div style="text-align: left;">
     <h1 align="center" style="margin: 0;">CopyShot</h1>
-    <p align="center" style="margin: 0; color: gray;">Fast OCR in your Mac's menu bar</p>
+    <p align="center" style="margin: 0; color: gray;">Fast, transparent OCR in your Mac's menu bar</p>
   </div>
 </div>
 
@@ -17,8 +17,14 @@
 <br/>
 
 <p align="center">
+  <strong>CopyShot is the OCR tool for people who want to understand and control what's happening.</strong><br>
+  Transparent preprocessing, visual inspection, and top-notch configurability.<br>
+  <strong>No cloud. No API keys. No black box.</strong>
+</p>
+
+<p align="center">
   Select → extract → clipboard. One keystroke (⌘⇧C).<br>
-  Works on every display, resource friendly, and it’s open source.
+  Works seamlessly across every display, resource-friendly, and 100% open source.
 </p>
 
 <br/>
@@ -32,20 +38,21 @@
 
 | Feature | Description |
 |---------|-------------|
-| **Drag-to-Capture** | Any screen area, instantly. |
-| **Multi-Monitor** | Seamless across all displays. |
-| **⌘⇧C (or your own)** | Re-bindable global hotkey. |
-| **Vision OCR** | Accurate & Fast modes, with language correction option. |
-| **Image Preprocessing** | Grayscale and contrast adjustments for better results. |
-| **Quick Actions** | Flyout action bars to transform text, join lines, open URLs/search, and on-device translation.* |
-| **Settings Interface** | Built with SwiftUI for a smooth, native feel. |
-| **Auto-Update** | Background updates powered by Sparkle. |
-| **Notifications** | Includes sound, haptics, icons, and a preview you can tweak. |
-| **Resource Friendly** | Uses minimal CPU and RAM. It's also very small in size. |
+| **Multimodal Capture** | Standard OCR, QR/barcodes, LaTeX formulas (MFR 1.5), and table recognition. |
+| **Radial Capture Menu** | Right-click and drag with cursor locking to switch capture modes on the fly. |
+| **Drag-to-Capture** | Any screen area, instantly, with Retina-scaled single-frame acquisition. |
+| **Multi-Monitor** | Seamless across all connected displays with active-monitor HUD placement. |
+| **⌘⇧C (or your own)** | Re-bindable global hotkey via Carbon events (no Accessibility permissions needed). |
+| **Vision OCR Engine** | Accurate & Fast modes, with optional language correction and custom language sets. |
+| **Transparent Preprocessing** | Grayscale conversion (`CIPhotoEffectMono`) and 50% contrast enhancement for optimal text extraction. |
+| **Quick Actions** | Flyout action bars to transform text casing, strip line breaks, open URLs/search, and on-device translation.* |
+| **Settings Interface** | Bespoke SwiftUI layout with per-mode configurations and direct-manipulation action reordering. |
+| **Resource Friendly** | Sub-100ms pipeline, asynchronous prewarming, 60s idle model eviction, and minimal CPU/RAM footprint. |
+| **Auto-Update** | Background update checks powered securely by Sparkle. |
 
 *\*Note: On-device translation requires macOS 15.0 (Sequoia) or later. The first time a new language set is used, macOS will prompt you once to download Apple's on-device neural language set directly onto your Mac. Other Quick Actions are fully supported on macOS 14 (Sonoma)+.*
 
-### Capture modes (POC)
+### Multimodal Capture Modes
 
 During a capture, right-click and drag through the radial menu to choose OCR, QR/barcode, LaTeX, or table recognition; release to select, then drag a region with the left mouse button.
 
@@ -66,28 +73,34 @@ During a capture, right-click and drag through the radial menu to choose OCR, QR
 CopyShot runs as an ultra-lightweight menu bar utility (`LSUIElement`) with a direct, local pipeline:
 
 ```
-[Global Hotkey (⌘⇧C)] 
+[Global Hotkey (⌘⇧C) or Menu Bar]
          │
          ▼
-[SCScreenshotManager]      ──▶ Retina-scaled single-frame capture (~35ms)
+[SCScreenshotManager]          ──▶ Retina-scaled single-frame capture (~35ms)
          │
          ▼
-[CoreImage Preprocessor]   ──▶ Grayscale (CIPhotoEffectMono) + 50% contrast boost
+[CapturePipeline & Preprocessor]
          │
-         ▼
-[Apple Vision OCR Engine]  ──▶ VNRecognizeTextRequest + smart reading order assembly
-         │
-         ├───────────────────────────────┐
-         ▼                               ▼
-[NSPasteboard (Clipboard)]      [Floating Frosted-Glass HUD]
-(Text instantly available)       (Expandable preview + audio feedback)
+   ┌─────┴───────────────────────────────┬───────────────────────────────┐
+   ▼                                     ▼                               ▼
+[Vision OCR / Barcode]         [Pix2Text MFR 1.5 ONNX]          [Table Spatial Clustering]
+• VNRecognizeTextRequest       • Local ViT + Transformer        • Geometric text box alignment
+• VNDetectBarcodesRequest      • LaTeX math expression          • TSV / CSV / Markdown export
+   │                                     │                               │
+   └──────────────────────────────┬──────┴───────────────────────────────┘
+                                  ▼
+                    ┌───────────────────────────┐
+                    ▼                           ▼
+        [NSPasteboard (Clipboard)]    [Floating Frosted-Glass HUD]
+        (Instant pasteboard access)   (Expandable preview + Quick Actions shelf)
 ```
 
 1. **Hotkey Listening**: Carbon event registration intercepts `⌘⇧C` globally without requiring Accessibility permissions.
 2. **Multi-Monitor Overlay**: Full-screen transparent overlay windows open on all connected displays. Dragging cuts out the selected frame over the target text.
-3. **Single-Frame Capture**: macOS 14+ `SCScreenshotManager.captureImage` grabs the selected physical display coordinates directly in ~35ms.
-4. **Local Neural OCR**: Preprocessed with CoreImage, Apple's Vision framework identifies text lines and groups them logically from top-to-bottom and left-to-right.
-5. **Immediate Feedback**: The recognized text is copied to `NSPasteboard.general` while an interactive HUD appears on the captured display.
+3. **Radial Mode Selection**: Right-click drag engages cursor locking at the call point, allowing seamless radial switching between OCR, QR, LaTeX, and Table modes.
+4. **Single-Frame Capture**: macOS 14+ `SCScreenshotManager.captureImage` grabs the selected physical display coordinates directly in ~35ms.
+5. **Local Recognition**: Preprocessed with CoreImage, Apple's Vision framework identifies text lines and groups them logically, while specialized engines handle barcode symbologies, table grids, or LaTeX formulas.
+6. **Immediate Feedback**: The recognized text is copied to `NSPasteboard.general` while an interactive HUD with mode-specific Quick Actions appears on the captured display.
 
 ---
 
@@ -144,14 +157,16 @@ If you'd like to edit, build, test, and run CopyShot yourself on macOS, here's h
 4. **Run Tests:**
    Run the fast unit suite via terminal:
    ```bash
+   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
    xcodebuild test -scheme CopyShot -destination 'platform=macOS' \
-     -only-testing:CopyShotTests -skip-testing:CopyShotTests/PipelineBenchmarkTests
+     -only-testing:CopyShotTests -skip-testing:CopyShotTests/PipelineBenchmarkTests \
+     -skip-testing:CopyShotTests/OptimizationBenchmarkTests
    ```
    Benchmarks, the Settings UI smoke test, and a manual capture checklist are in [docs/TESTING.md](docs/TESTING.md).
 
 5. **Grant Permissions:**
-   The first time you run CopyShot, macOS security features will prevent it from capturing your screen. You will need to manually grant permission. Here is how to locate `Screen Recording Permissions` manually:
-   - Go to `System Settings > Privacy & Security > Screen Recording`.
+   The first time you run CopyShot, macOS security features will prevent it from capturing your screen. You will need to manually grant permission:
+   - Go to `System Settings > Privacy & Security > Screen & System Audio Recording`.
    - Find **CopyShot** in the list of applications and **enable the toggle** next to it.
    - Quit and reopen CopyShot for the changes to take effect.
 
@@ -159,7 +174,7 @@ If you'd like to edit, build, test, and run CopyShot yourself on macOS, here's h
    If you'd like to make any change to the code:
    - Save your changes.
    - Quit any running CopyShot instances.
-   - Delete te given `Screen Recording Permission` access to all CopyShot instances.
+   - Delete the given `Screen & System Audio Recording` access to all CopyShot instances if rebuilding with an updated signature.
    - Rerun the app and regrant permissions. (If doesn't work, try `Product > Perform Action > Run Without Building`)
 
 Once it's set up, CopyShot should run & appear in your menu bar. If you're going through all this, thanks for checking it out, you probably know your way around, so feel free to tweak it.
@@ -172,22 +187,21 @@ Once it's set up, CopyShot should run & appear in your menu bar. If you're going
 <details>
   <summary>Click to expand</summary>
 
-### Editing Copied Texts
-- Introduce a button below the copy notification to apply various text edit tools for quick edits, like removing line breaks, applying UPPERCASE, lowercase, Title Case, Sentence case, tOGGLE, etc.
-- Possibly integrate an LLM (or a more powerful OCR like DeepSeek-OCR) with your API key and a custom system prompt for editing the text.
+### Visual Inspection & Transparency
+- Live interactive preview showing preprocessed image filters (grayscale, binarization, contrast).
+- Visual bounding-box debugging showing detected text, table cells, or barcode matrix geometries.
 
-### OCR Improvements
-- Personal glossary for domain-specific terms.
+### OCR & Language Improvements
+- Personal glossary for domain-specific vocabulary and custom corrections.
 - OCR history with instant search & re-copy.
-- Drag-and-drop image files into the app for OCR.
-- Advanced preprocessing: deskew, denoise, adaptive binarization...
+- Drag-and-drop image files directly into the app for OCR extraction.
+- Advanced preprocessing controls: deskew, denoise, and adaptive threshold binarization.
 
 ### Capture Options
-- Capture an entire window or app
-- Countdown timer for captures.
-- Handle scrolling areas for long pages.
-- Option to save captures as images (PNG/JPG).
-- Option to copy the image itself to the clipboard.
+- Capture an entire window or application frame.
+- Countdown timer for timed captures.
+- Handle scrolling areas for long documents and code blocks.
+- Option to save captures as local images (PNG/JPG) or copy the image directly to the clipboard.
 
 ### Usability and Accessibility
 - Onboarding guide for first-time users.
