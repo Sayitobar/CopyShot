@@ -20,7 +20,9 @@ final class CustomActionLibrary: ObservableObject {
            let suite = environment["COPYSHOT_UI_TEST_SETTINGS_SUITE"], suite.hasPrefix("CopyShot.UITests."),
            let defaults = UserDefaults(suiteName: suite) {
             // UI tests use a private directory and never inspect the user's installed scripts.
-            return CustomActionLibrary(directory: FileManager.default.temporaryDirectory.appendingPathComponent(suite), defaults: defaults)
+            let fixtureDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+            try? FileManager.default.createDirectory(at: fixtureDirectory, withIntermediateDirectories: true)
+            return CustomActionLibrary(directory: fixtureDirectory, defaults: defaults)
         }
         return CustomActionLibrary()
     }()
@@ -117,6 +119,61 @@ final class CustomActionLibrary: ObservableObject {
         publishSnapshot()
     }
 
+    func deleteScript(_ script: ScriptAction, moveToTrash: (ScriptAction) async throws -> Void = CustomActionLibrary.moveScriptToTrash) async throws {
+        guard scripts.contains(script), script.fileURL.deletingLastPathComponent().standardizedFileURL == directory?.standardizedFileURL else {
+            throw CustomActionError.scriptChanged
+        }
+        try await Self.validateRemoval(script)
+        try await moveToTrash(script)
+        await reload()
+    }
+
+    private static func moveScriptToTrash(_ script: ScriptAction) async throws {
+        let url = script.fileURL
+        // Finder can recycle writable files directly. A user selection grants access
+        // when the Application Scripts directory is read-only to our sandbox.
+        do { try await recycle(url); return } catch {
+            guard FileManager.default.fileExists(atPath: url.path) else { throw error }
+        }
+        let folder = url.deletingLastPathComponent()
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = folder
+        panel.prompt = "Allow Removal"
+        panel.message = "Choose CopyShot’s actions folder to allow moving \(url.lastPathComponent) to Trash."
+        let response: NSApplication.ModalResponse = await withCheckedContinuation { continuation in
+            if let window = NSApp.keyWindow {
+                panel.beginSheetModal(for: window) { continuation.resume(returning: $0) }
+            } else { panel.begin { continuation.resume(returning: $0) } }
+        }
+        guard response == .OK, let selected = panel.url else { throw CancellationError() }
+        guard selected.standardizedFileURL == folder.standardizedFileURL else {
+            throw CustomActionError.invalidMetadata("Choose the actions folder shown in the removal prompt.")
+        }
+        let scoped = selected.startAccessingSecurityScopedResource()
+        defer { if scoped { selected.stopAccessingSecurityScopedResource() } }
+        // The permission dialog may stay open while an editor replaces the file.
+        try await validateRemoval(script)
+        try await recycle(url)
+    }
+
+    private static func validateRemoval(_ script: ScriptAction) async throws {
+        try await Task.detached(priority: .utility) {
+            let values = try script.fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true,
+                  let source = try? String(contentsOf: script.fileURL, encoding: .utf8),
+                  ScriptAction.digest(source) == script.revision else { throw CustomActionError.scriptChanged }
+        }.value
+        try Task.checkCancellation()
+    }
+
+    private static func recycle(_ url: URL) async throws {
+        let moved = try await NSWorkspace.shared.recycle([url])
+        guard moved[url] != nil else { throw CocoaError(.fileWriteUnknown) }
+    }
+
     func openActionsFolder() async {
         if directory == nil { await reload() }
         if let directory { NSWorkspace.shared.open(directory) }
@@ -143,6 +200,10 @@ final class CustomActionLibrary: ObservableObject {
                 try link.validate(hasHandler: hasHandler)
                 entries.append(.url(link))
             } catch { errors.append(.init(fileURL: nil, message: "\(link.title): \(error.localizedDescription)")) }
+        }
+        managed.sort {
+            let comparison = $0.metadata.title.localizedStandardCompare($1.metadata.title)
+            return comparison == .orderedSame ? $0.metadata.id < $1.metadata.id : comparison == .orderedAscending
         }
         guard entries != catalog.actions || errors != catalog.diagnostics || managed != catalog.managementActions else { return }
         catalog = CustomActionCatalog(actions: entries, diagnostics: errors, managementActions: managed,

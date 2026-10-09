@@ -265,11 +265,11 @@ struct CustomNotificationView: View {
         .overlay(alignment: .bottomTrailing) {
             if let fullBody = fullBodyText, fullBody != bodyText, !bodyText.isEmpty {
                 Button {
-                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    withAnimation(DisclosureChevron.animation) {
                         isExpanded.toggle()
                     }
                 } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    DisclosureChevron(isExpanded: expanded)
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.primary)
                         .frame(width: 22, height: 22)
@@ -278,6 +278,7 @@ struct CustomNotificationView: View {
                         .shadow(color: Color.black.opacity(0.1), radius: 1)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(expanded ? "Collapse notification" : "Expand notification")
                 .debugZone("Expand", type: .interactive)
                 .padding(10)
                 .opacity(isHoveringNotification ? 1 : 0)

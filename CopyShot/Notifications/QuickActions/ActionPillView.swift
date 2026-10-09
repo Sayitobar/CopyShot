@@ -107,6 +107,7 @@ struct ActionPillView: View {
                     .allowsTightening(true)
                     .minimumScaleFactor(0.85)
                 
+                if case .custom = action.operation { CustomActionIndicator().accessibilityHidden(true) }
                 Spacer(minLength: 2)
                 
                 // Trailing indicator: Left chevron for flyouts, return arrow for direct actions
@@ -159,7 +160,7 @@ struct ActionPillView: View {
         }
         .buttonStyle(.plain)
         .help(action.helpText ?? action.title)
-        .accessibilityLabel(action.helpText ?? action.title)
+        .accessibilityLabel(accessibilityDescription)
         .accessibilityIdentifier("qa-action-\(action.id)")
         .accessibilityValue(action.shortcutNumber.map { "Shortcut \($0)" } ?? "No numeric shortcut")
         .onHover { hovering in
@@ -172,6 +173,11 @@ struct ActionPillView: View {
     }
     
     // MARK: - Action Icon / Logo Renderer
+
+    private var accessibilityDescription: String {
+        if case .custom = action.operation { return "\(action.title), Custom action" }
+        return action.helpText ?? action.title
+    }
     
     private var iconView: some View {
         ActionIconView(

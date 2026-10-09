@@ -61,7 +61,7 @@ Supported headers:
 | `output` | `copy`, `open-url`, or `none`. |
 | `timeout` | Positive, finite wait duration in seconds. |
 
-Duplicate recognized headers, invalid values, duplicate action IDs, and non-executable or unsupported files appear under **Manage Actions** with diagnostics. Unknown header keys are ignored for forward compatibility.
+Duplicate recognized headers, invalid values, duplicate action IDs, and non-executable or unsupported files appear in **Custom Actions** with diagnostics. Unknown header keys are ignored for forward compatibility.
 
 ### Input, outputs, and execution
 
@@ -90,9 +90,15 @@ Both tokens percent-encode captured UTF-8 text, including URL delimiters and exi
 
 URL definitions persist separately in the `customURLActions` preference using storage version 1 and stable UUIDs. They share schema-v2 mode ordering and enable preferences with scripts. New actions start disabled. Reset preserves authored definitions and restores ordering/enable preferences. Removing a script preserves its preferences so reinstalling the same ID restores them.
 
+The **Custom Actions** list sorts actions alphabetically, independently of each mode's Quick Actions order. Expand an action there for its description, type, supported modes, and script behavior or URL template. The puzzle-piece indicator identifies custom entries in Quick Actions and the capture shelf. Installation guidance is collapsed under **Using Custom Actions**. Disabled actions remain editable.
+
+The borderless trash button asks for confirmation. Removing a URL action deletes its definition; removing a script moves its file to Trash and refreshes the mode lists and shelf. When the sandbox needs permission, select the actions folder in the native **Allow Removal** chooser. Cancelling leaves the script installed. Finder's Put Back restores the file, and its stable identity restores the previous mode preferences.
+
+**General → Reset Settings** opens a sheet with independent General, Capture, Notifications, and Quick Actions checkboxes. Nothing is selected initially. **Reset Selected** restores only the selected pages; Cancel changes nothing. About has no resettable preferences. Resetting Quick Actions retains authored scripts and URL definitions, while restoring defaults and disabling custom actions.
+
 ## Agent skill and future features
 
-The repo skill at `.agents/skills/copyshot-custom-actions/SKILL.md` is self-contained and can be used by an agent to generate, fixture-test, and install custom actions when requested. Installation remains a user-directed file operation; the app itself never writes the protected scripts folder.
+The repo skill at `.agents/skills/copyshot-custom-actions/SKILL.md` is self-contained and can be used by an agent to generate, fixture-test, and install custom actions when requested. Installation remains a user-directed file operation; the app never creates or overwrites user scripts.
 
 Future features: native HTTP/webhook actions with request bodies, credentials and response handling; custom capture modes with their own recognition and interaction design. The radial menu continues to select only the existing four modes. AppleScript/Automator runners and structured script-input formats are also outside this release.
 

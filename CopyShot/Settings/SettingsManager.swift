@@ -95,6 +95,19 @@ struct HotkeyConfig: Codable, Equatable {
     )
 }
 
+enum SettingsResetPage: String, CaseIterable, Identifiable {
+    case general, capture, notifications, quickActions
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .capture: "Capture"
+        case .notifications: "Notifications"
+        case .quickActions: "Quick Actions"
+        }
+    }
+}
+
 class SettingsManager: ObservableObject {
     // Singleton pattern to access settings from anywhere.
     static let shared: SettingsManager = {
@@ -443,6 +456,33 @@ class SettingsManager: ObservableObject {
     // Reset quick actions to defaults
     func resetQuickActionsToDefaults() {
         quickActionsConfig = QuickActionsConfig()
+    }
+
+    func reset(pages: Set<SettingsResetPage>) {
+        if pages.contains(.general) {
+            appearance = .system
+            launchAtLogin = false
+        }
+        if pages.contains(.capture) {
+            recognitionLevel = .accurate
+            usesLanguageCorrection = true
+            recognitionLanguages = ["en-US"]
+            resetHotkeysToDefaults()
+            prettifyLatex = true
+            fixLatexSyntax = true
+            prewarmRecognition = true
+            mfrUnloadPolicy = .defaultTimeout
+            defaultCaptureMode = .standardOCR
+            captureModeBehavior = .always
+            captureModeResetTimeoutMinutes = 15
+            lastUsedCaptureMode = .standardOCR
+            lastCaptureDate = nil
+        }
+        if pages.contains(.notifications) {
+            textPreviewLimit = 50
+            playNotificationSound = true
+        }
+        if pages.contains(.quickActions) { resetQuickActionsToDefaults() }
     }
     
     // Check if hotkey is already in use

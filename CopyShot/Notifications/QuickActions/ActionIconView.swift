@@ -17,6 +17,8 @@ enum ActionIconRenderer {
     
     /// Loads an SF Symbol by name, resolving standard symbols and private system symbols (e.g. `text.line.2.summary`).
     static func image(forSymbol name: String) -> NSImage? {
+        // An icon field can be empty while editing; CoreUI logs every catalog lookup for a blank name.
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         let key = name as NSString
         if let cached = iconCache.object(forKey: key) {
             return cached

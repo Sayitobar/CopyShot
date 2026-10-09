@@ -24,7 +24,6 @@ private func calculateDragOffset(index: Int, isDragging: Bool, dragStart: Int?, 
 struct QuickActionsSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
     @ObservedObject private var actionLibrary = CustomActionLibrary.shared
-    @State private var customManagerExpanded = false
     @State private var editingURLAction: CustomURLAction?
     @State private var expandedActionId: String? = nil
     var baselineMode: CaptureMode? = nil
@@ -50,7 +49,6 @@ struct QuickActionsSettingsView: View {
     private var registry: ActionRegistry { baselineMode == nil ? actionLibrary.catalog.registry : .shared }
     private var catalog: [ActionCatalogEntry] { registry.catalog(for: mode, config: settings.quickActionsConfig) }
     private var scopedConfig: ModeActionConfiguration { settings.quickActionsConfig.modeConfiguration(for: mode, registry: registry) }
-    @State private var showingResetConfirmation: Bool = false
     
     // Direct manipulation drag states
     @State private var draggingActionId: String? = nil
@@ -111,6 +109,7 @@ struct QuickActionsSettingsView: View {
                             if let metadata = metadataMap[actionId] {
                                 let unavailableReason = catalog.first { $0.metadata.id == actionId }?.unavailableReason
                                 let isEnabled = !scopedConfig.disabledActionIds.contains(actionId) && unavailableReason == nil
+                                let isCustom = actionLibrary.catalog.action(id: actionId) != nil
                                 let rowHeight = rowHeights[draggingActionId ?? actionId] ?? 0
                                 let isExpanded = expandedActionId == actionId
                                 let isLast = index == activeOrder.count - 1
@@ -132,16 +131,10 @@ struct QuickActionsSettingsView: View {
                                     isEnabled: isEnabled,
                                     isExpanded: isExpanded,
                                     isDragging: isDragging,
-                                    isCustom: actionLibrary.catalog.action(id: actionId) != nil,
+                                    isCustom: isCustom,
                                     onToggle: { toggleAction(id: actionId) },
                                     onExpand: {
-                                        if case .url(let link) = actionLibrary.catalog.action(id: actionId) {
-                                            editingURLAction = link
-                                            customManagerExpanded = true
-                                            expandedActionId = nil
-                                            return
-                                        }
-                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                        withAnimation(DisclosureChevron.animation) {
                                             expandedActionId = isExpanded ? nil : actionId
                                         }
                                     },
@@ -164,15 +157,12 @@ struct QuickActionsSettingsView: View {
                                 .zIndex(isDragging ? 100 : 2)
                                 
                                 // Narrower Inset Configuration Drawer: Left edge at Action Icon (36), Right edge at Collapse Button (46)
-                                if baselineMode == nil && isExpanded && (isEnabled || actionLibrary.catalog.action(id: actionId) != nil) && (metadata.hasParameters || metadata.hasSubActions) {
+                                if baselineMode == nil && isExpanded && isEnabled && !isCustom && (metadata.hasParameters || metadata.hasSubActions) {
                                     VStack(spacing: 0) {
                                         HStack(spacing: 0) {
                                             Color.clear.frame(width: 36, height: 1)
                                             
-                                            Group {
-                                                if let descriptor = actionLibrary.catalog.action(id: actionId) { CustomActionDetailsView(descriptor: descriptor) }
-                                                else { ActionDrawerDetailView(actionId: actionId) }
-                                            }
+                                            ActionDrawerDetailView(actionId: actionId)
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                                 .padding(10)
                                                 .background(Color(NSColor.controlBackgroundColor).opacity(0.75))
@@ -205,29 +195,8 @@ struct QuickActionsSettingsView: View {
                 }
                 
                 CustomActionsSettingsSection(library: actionLibrary, mode: mode, isBaseline: baselineMode != nil,
-                                             isExpanded: $customManagerExpanded, editing: $editingURLAction)
+                                             editing: $editingURLAction)
 
-                // MARK: - Reset to Defaults
-                HStack {
-                    Spacer()
-                    Button("Reset Quick Actions to Defaults") {
-                        showingResetConfirmation = true
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.top, 4)
-                    .alert("Reset Quick Actions to Defaults?", isPresented: $showingResetConfirmation) {
-                        Button("Reset", role: .destructive) {
-                            withAnimation(.easeInOut(duration: 0.25)) {
-                                settings.resetQuickActionsToDefaults()
-                            }
-                        }
-                        Button("Cancel", role: .cancel) {}
-                    } message: {
-                        Text("This will restore default action ordering and enabled states for every capture mode, and reset shared Quick Actions preferences.")
-                    }
-                }
             }
         }
         .onPreferenceChange(ActionRowHeightKey.self) { rowHeights = $0 }
@@ -370,24 +339,19 @@ private struct ActionRowView: View {
                 )
             
             // Action Icon Badge
-            ZStack {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(isEnabled ? 0.08 : 0.04))
-                    .frame(width: 24, height: 24)
-                
-                ActionIconView(
-                    icon: metadata.icon,
-                    size: 14,
-                    isHovered: isEnabled,
-                    accentColor: .primary
-                )
-            }
+            ActionSettingsIconBadge(icon: metadata.icon, isEnabled: isEnabled)
             
             // Title Only (No explanation in non-extended form)
             VStack(alignment: .leading, spacing: 2) {
-                Text(metadata.title)
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(isEnabled ? .primary : .secondary)
+                HStack(spacing: 6) {
+                    Text(metadata.title)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(isEnabled ? .primary : .secondary)
+                    if isCustom {
+                        CustomActionIndicator()
+                            .accessibilityIdentifier("qa-custom-indicator-\(metadata.id)")
+                    }
+                }
                 if let unavailableReason {
                     Text(unavailableReason).font(.system(size: 10)).foregroundStyle(.secondary)
                 }
@@ -396,11 +360,10 @@ private struct ActionRowView: View {
             Spacer()
             
             // Configure Icon Button (Dropdown chevron) with continuous rounded rect hit area
-            if metadata.hasParameters || metadata.hasSubActions {
+            if !isCustom && (metadata.hasParameters || metadata.hasSubActions) {
                 Button(action: onExpand) {
-                    Image(systemName: "chevron.down")
+                    DisclosureChevron(isExpanded: isExpanded)
                         .font(.system(size: 10, weight: .bold))
-                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
                         .foregroundStyle(isExpanded ? .blue : (isEnabled ? .secondary : .secondary.opacity(0.35)))
                         .frame(width: 22, height: 22)
                         .background(
@@ -414,8 +377,9 @@ private struct ActionRowView: View {
                         .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(!isEnabled && !isCustom)
+                .disabled(!isEnabled)
                 .help(isExpanded ? "Hide Settings" : "Configure Action")
+                .accessibilityLabel(isExpanded ? "Hide Settings" : "Configure Action")
                 .accessibilityIdentifier("qa-configure-\(metadata.id)")
             }
             
@@ -451,7 +415,6 @@ private struct ActionDrawerDetailView: View {
     @State private var dragSubStartIndex: Int? = nil
     @State private var dragSubTargetIndex: Int? = nil
     @State private var dragSubTranslation: CGFloat = 0
-    @State private var hoveredTrashSubId: String? = nil
     
     private var availableLanguagesToAdd: [TranslationTargetLanguage] {
         let defaultOrder = ["translate_to_es", "translate_to_de", "translate_to_fr", "translate_to_ja", "translate_to_zh"]
@@ -666,25 +629,9 @@ private struct ActionDrawerDetailView: View {
                                     
                                     Spacer()
                                     
-                                    // Delete Button (Trash with red hover)
-                                    Button {
+                                    SettingsIconButton(title: "Remove from Flyout Shelf", icon: "trash", isDestructive: true) {
                                         deleteFlyoutLanguage(subId: subId)
-                                    } label: {
-                                        Image(systemName: "trash")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(hoveredTrashSubId == subId ? Color.red : Color.secondary.opacity(0.55))
                                     }
-                                    .buttonStyle(.plain)
-                                    .onHover { isHovering in
-                                        withAnimation(.easeInOut(duration: 0.15)) {
-                                            if isHovering {
-                                                hoveredTrashSubId = subId
-                                            } else if hoveredTrashSubId == subId {
-                                                hoveredTrashSubId = nil
-                                            }
-                                        }
-                                    }
-                                    .help("Remove from Flyout Shelf")
                                 }
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)

@@ -4,6 +4,86 @@ import XCTest
 
 @MainActor
 final class CustomActionLibraryTests: XCTestCase {
+    func testManagementSortsTitlesWithoutChangingShelfOrder() throws {
+        let suite = "CopyShotTests.custom.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = CustomActionLibrary(defaults: defaults)
+        for title in ["Zulu", "alpha", "Beta"] {
+            try library.saveURLAction(.init(title: title, template: "https://example.com/?q={text}"))
+        }
+        XCTAssertEqual(library.catalog.managementActions.map { $0.metadata.title }, ["alpha", "Beta", "Zulu"])
+        XCTAssertEqual(library.catalog.actions.map { $0.metadata.title }, ["Zulu", "alpha", "Beta"])
+    }
+
+    func testScriptRemovalRefreshesBothCatalogsAndCanBeRestored() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("one.sh")
+        try writeScript("#!/bin/sh\n# @copyshot.id removable\ncat", to: file)
+        let suite = "CopyShotTests.custom.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = CustomActionLibrary(directory: directory, defaults: defaults)
+        await library.reload()
+        guard case .script(let script) = library.catalog.actions.first else { return XCTFail("Missing fixture script") }
+        var config = QuickActionsConfig()
+        var scoped = config.modeConfiguration(for: .standardOCR, registry: library.catalog.registry)
+        scoped.disabledActionIds.removeAll { $0 == script.metadata.id }
+        config.setModeConfiguration(scoped, for: .standardOCR, registry: library.catalog.registry)
+        let saved = directory.appendingPathComponent("restorable.txt")
+        try await library.deleteScript(script) { script in try FileManager.default.moveItem(at: script.fileURL, to: saved) }
+        XCTAssertTrue(library.catalog.managementActions.isEmpty)
+        XCTAssertFalse(library.catalog.registry.actions(context: .init(text: "Text", mode: .standardOCR), config: config).contains { $0.id == script.metadata.id })
+        try FileManager.default.moveItem(at: saved, to: file)
+        await library.reload()
+        XCTAssertTrue(library.catalog.registry.actions(context: .init(text: "Text", mode: .standardOCR), config: config).contains { $0.id == script.metadata.id })
+    }
+
+    func testFailedScriptRemovalKeepsTheActionAvailable() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("one.sh")
+        try writeScript("#!/bin/sh\ncat", to: file)
+        let suite = "CopyShotTests.custom.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = CustomActionLibrary(directory: directory, defaults: defaults)
+        await library.reload()
+        guard case .script(let script) = library.catalog.actions.first else { return XCTFail("Missing fixture script") }
+        do {
+            try await library.deleteScript(script) { _ in throw CocoaError(.fileWriteNoPermission) }
+            XCTFail("Removal should fail")
+        } catch {}
+        XCTAssertEqual(library.catalog.managementActions, [.script(script)])
+        XCTAssertEqual(library.catalog.actions, [.script(script)])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testScriptChangedSinceConfirmationIsNotRemoved() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("one.sh")
+        try writeScript("#!/bin/sh\ncat", to: file)
+        let suite = "CopyShotTests.custom.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = CustomActionLibrary(directory: directory, defaults: defaults)
+        await library.reload()
+        guard case .script(let script) = library.catalog.actions.first else { return XCTFail("Missing fixture script") }
+        try writeScript("#!/bin/sh\n# Edited while the removal prompt was open\ncat", to: file)
+        var attemptedRemoval = false
+        do {
+            try await library.deleteScript(script) { _ in attemptedRemoval = true }
+            XCTFail("A changed script needs a fresh confirmation")
+        } catch CustomActionError.scriptChanged {} catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertFalse(attemptedRemoval)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    }
+
     func testPublishedActionsCanBeResolvedImmediately() throws {
         let suite = "CopyShotTests.custom.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

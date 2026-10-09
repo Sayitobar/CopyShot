@@ -12,6 +12,83 @@ import Carbon
 
 @Suite("SettingsManager Tests")
 struct SettingsManagerTests {
+    @Test("Selective notification reset leaves capture and action settings intact")
+    func testSelectiveNotificationReset() throws {
+        let suite = "CopyShotTests.reset.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsManager(defaults: defaults)
+        settings.appearance = .dark
+        settings.recognitionLevel = .fast
+        settings.quickActionsConfig.searchEngine = .kagi
+        settings.textPreviewLimit = 12
+        settings.playNotificationSound = false
+        settings.reset(pages: [.notifications])
+        let reloaded = SettingsManager(defaults: defaults)
+        #expect(reloaded.textPreviewLimit == 50)
+        #expect(reloaded.playNotificationSound)
+        #expect(reloaded.appearance == .dark)
+        #expect(reloaded.recognitionLevel == .fast)
+        #expect(reloaded.quickActionsConfig.searchEngine == .kagi)
+    }
+
+    @Test("Capture reset restores recognition, mode memory, and hotkey without resetting other pages")
+    func testSelectiveCaptureReset() throws {
+        let suite = "CopyShotTests.reset.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsManager(defaults: defaults)
+        settings.recognitionLevel = .fast
+        settings.recognitionLanguages = ["de-DE"]
+        settings.usesLanguageCorrection = false
+        settings.prettifyLatex = false
+        settings.fixLatexSyntax = false
+        settings.prewarmRecognition = false
+        settings.mfrUnloadPolicy = .never
+        settings.defaultCaptureMode = .table
+        settings.captureModeBehavior = .rememberLast
+        settings.captureModeResetTimeoutMinutes = 60
+        settings.recordCaptureModeUsed(.latex)
+        settings.captureHotkey = .init(keyCode: 1, modifierFlags: 0, displayString: "S")
+        settings.appearance = .dark
+        settings.textPreviewLimit = 12
+        settings.quickActionsConfig.isEnabled = false
+        settings.reset(pages: [.capture])
+        let reloaded = SettingsManager(defaults: defaults)
+        #expect(reloaded.recognitionLevel == .accurate)
+        #expect(reloaded.recognitionLanguages == ["en-US"])
+        #expect(reloaded.usesLanguageCorrection && reloaded.prettifyLatex && reloaded.fixLatexSyntax && reloaded.prewarmRecognition)
+        #expect(reloaded.mfrUnloadPolicy == .defaultTimeout)
+        #expect(reloaded.defaultCaptureMode == .standardOCR && reloaded.lastUsedCaptureMode == .standardOCR)
+        #expect(reloaded.captureModeBehavior == .always && reloaded.captureModeResetTimeoutMinutes == 15)
+        #expect(reloaded.lastCaptureDate == nil)
+        #expect(reloaded.captureHotkey == .defaultCapture)
+        #expect(reloaded.appearance == .dark && reloaded.textPreviewLimit == 12)
+        #expect(!reloaded.quickActionsConfig.isEnabled)
+    }
+
+    @Test("Quick Actions reset retains authored actions and an empty selection changes nothing")
+    @MainActor
+    func testSelectiveQuickActionsReset() throws {
+        let suite = "CopyShotTests.reset.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = CustomActionLibrary(defaults: defaults)
+        let link = CustomURLAction(title: "Saved", template: "https://example.com/?q={text}")
+        try library.saveURLAction(link)
+        let settings = SettingsManager(defaults: defaults)
+        settings.quickActionsConfig.isEnabled = false
+        settings.quickActionsConfig.searchEngine = .kagi
+        settings.recognitionLevel = .fast
+        settings.reset(pages: [])
+        #expect(!settings.quickActionsConfig.isEnabled && settings.quickActionsConfig.searchEngine == .kagi)
+        settings.reset(pages: [.quickActions])
+        #expect(settings.quickActionsConfig == QuickActionsConfig())
+        #expect(settings.recognitionLevel == .fast)
+        #expect(CustomActionLibrary(defaults: defaults).urlActions == [link])
+        #expect(library.catalog.registry.catalog(for: .standardOCR, config: settings.quickActionsConfig).last?.isEnabled == false)
+    }
+
 
     @Test("Explicit zero preview limit is distinct from a missing preference")
     func testZeroPreviewLimitPersists() throws {

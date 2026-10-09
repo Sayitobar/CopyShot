@@ -9,6 +9,55 @@ import XCTest
 import AppKit
 
 final class CopyShotUITests: XCTestCase {
+    @MainActor
+    func testSelectiveResetCanBeCancelledAndOnlyResetsChosenPage() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        app.launchEnvironment["COPYSHOT_UI_TEST_APPEARANCE"] = "Light"
+        app.launch()
+        let window = app.windows["Settings"]
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        XCTAssertTrue(window.buttons["settings-reset"].waitForExistence(timeout: 3))
+        window.buttons["settings-tab-Notifications"].click()
+        let preview = window.textFields["settings-notifications-preview-limit"]
+        preview.click()
+        preview.typeKey("a", modifierFlags: .command)
+        preview.typeText("12")
+        preview.typeKey(.return, modifierFlags: [])
+        window.buttons["settings-tab-Quick Actions"].click()
+        window.checkBoxes["settings-quick-actions-master"].click()
+        window.buttons["settings-tab-General"].click()
+        let originalHeight = settledWindowHeight(window)
+        let generalScreenshot = XCTAttachment(screenshot: window.screenshot())
+        generalScreenshot.name = "General Reset Link"
+        generalScreenshot.lifetime = .keepAlways
+        add(generalScreenshot)
+        window.buttons["settings-reset"].click()
+        let reset = app.buttons["settings-reset-confirm"]
+        XCTAssertTrue(reset.waitForExistence(timeout: 3))
+        XCTAssertFalse(reset.isEnabled)
+        app.checkBoxes["settings-reset-page-notifications"].click()
+        let sheet = app.sheets.firstMatch
+        let resetScreenshot = XCTAttachment(screenshot: sheet.exists ? sheet.screenshot() : window.screenshot())
+        resetScreenshot.name = "Selective Settings Reset"
+        resetScreenshot.lifetime = .keepAlways
+        add(resetScreenshot)
+        app.buttons["settings-reset-cancel"].click()
+        window.buttons["settings-tab-Notifications"].click()
+        XCTAssertEqual(preview.value as? String, "12")
+        window.buttons["settings-tab-General"].click()
+        window.buttons["settings-reset"].click()
+        app.checkBoxes["settings-reset-page-notifications"].click()
+        reset.click()
+        XCTAssertEqual(window.frame.height, originalHeight, accuracy: 1)
+        XCTAssertEqual(String(describing: window.radioButtons["Light"].value ?? ""), "1")
+        window.buttons["settings-tab-Notifications"].click()
+        XCTAssertEqual(preview.value as? String, "50")
+        window.buttons["settings-tab-Quick Actions"].click()
+        XCTAssertEqual(String(describing: window.checkBoxes["settings-quick-actions-master"].value ?? ""), "0")
+    }
+
 
     @MainActor
     func testCustomURLActionsCanBeCreatedEditedWhileDisabledAndDeleted() throws {
@@ -37,18 +86,41 @@ final class CopyShotUITests: XCTestCase {
             let edit = window.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "qa-edit-url-")).firstMatch
             for _ in 0..<8 where !edit.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
             XCTAssertTrue(edit.exists)
+            let actionID = "custom.url." + edit.identifier.replacingOccurrences(of: "qa-edit-url-", with: "")
+            XCTAssertTrue(window.descendants(matching: .any)["qa-custom-indicator-\(actionID)"].exists)
+            XCTAssertFalse(window.buttons["qa-configure-\(actionID)"].exists)
+            XCTAssertFalse(window.descendants(matching: .any)["qa-custom-installation-help"].exists)
+            window.buttons["qa-custom-expand-\(actionID)"].click()
+            XCTAssertTrue(window.descendants(matching: .any)["qa-custom-details-\(actionID)"].exists)
+            XCTAssertEqual(window.frame.height, initialHeight, accuracy: 1)
+            window.buttons["qa-custom-expand-\(actionID)"].click()
             edit.click()
             XCTAssertTrue(title.waitForExistence(timeout: 3))
             XCTAssertEqual(window.frame.height, initialHeight, accuracy: 1)
             let cancel = window.buttons["qa-url-cancel"]
             for _ in 0..<8 where !cancel.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
+            window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200)
+            let editorScreenshot = XCTAttachment(screenshot: window.screenshot())
+            editorScreenshot.name = "Custom Action Editor \(appearance)"
+            editorScreenshot.lifetime = .keepAlways
+            add(editorScreenshot)
             cancel.click()
             let delete = window.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "qa-delete-url-")).firstMatch
             for _ in 0..<8 where !delete.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
             delete.click()
+            window.buttons["Cancel"].click()
+            XCTAssertTrue(edit.exists)
+            delete.click()
             window.buttons["Delete"].click()
             XCTAssertFalse(edit.exists)
+            XCTAssertFalse(window.descendants(matching: .any)["qa-row-standardOCR-\(actionID)"].exists)
             XCTAssertEqual(window.frame.height, initialHeight, accuracy: 1)
+            let help = window.buttons["qa-custom-help"]
+            for _ in 0..<8 where !help.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
+            help.click()
+            XCTAssertTrue(window.descendants(matching: .any)["qa-custom-installation-help"].exists)
+            XCTAssertEqual(window.frame.height, initialHeight, accuracy: 1)
+            help.click()
             let screenshot = XCTAttachment(screenshot: window.screenshot())
             screenshot.name = "Custom Actions \(appearance)"
             screenshot.lifetime = .keepAlways

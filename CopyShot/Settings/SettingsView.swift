@@ -637,6 +637,7 @@ struct SettingsRow<Control: View>: View {
 struct GeneralSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
     @EnvironmentObject var updaterViewModel: UpdaterViewModel
+    @State private var showingReset = false
     
     var body: some View {
         VStack(spacing: 24) {
@@ -662,7 +663,16 @@ struct GeneralSettingsView: View {
                 .labelsHidden()
                 .frame(width: 200) // Fixed width for uniformity
             }
+            Button("Reset Settings") {
+                showingReset = true
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11))
+            .foregroundStyle(Color.accentColor)
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("settings-reset")
         }
+        .sheet(isPresented: $showingReset) { SettingsResetSheet() }
     }
 }
 
@@ -1048,6 +1058,7 @@ struct NotificationsSettingsView: View {
                 Toggle("", isOn: $settings.playNotificationSound)
                     .toggleStyle(.switch)
                     .labelsHidden()
+                    .accessibilityIdentifier("settings-notifications-sound")
             }
             
             SettingsRow(label: "Text Preview Limit", tooltip: "Maximum characters to show in the notification.\nSet to 0 for full text.", zIndexValue: 9) {
@@ -1056,6 +1067,7 @@ struct NotificationsSettingsView: View {
                     .frame(width: 60)
                     .multilineTextAlignment(.trailing)
                     .labelsHidden()
+                    .accessibilityIdentifier("settings-notifications-preview-limit")
             }
         }
     }
@@ -1108,11 +1120,11 @@ struct AboutSettingsView: View {
             // All four buttons in a single row — icon-only, expand on hover
             HStack(spacing: 10) {
                 // Local file openers (left)
-                AboutButton(title: "Show in Finder", icon: "app.badge") {
+                SettingsUtilityButton(title: "Show in Finder", icon: "app.badge") {
                     NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
                 }
                 
-                AboutButton(title: "App Data Folder", icon: "folder") {
+                SettingsUtilityButton(title: "App Data Folder", icon: "folder") {
                     let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                     let appDir = appSupportURL.appendingPathComponent(Bundle.main.bundleIdentifier ?? "CopyShot")
                     try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
@@ -1122,13 +1134,13 @@ struct AboutSettingsView: View {
                 Spacer()
                 
                 // Online buttons (right)
-                AboutButton(title: "Check Updates", icon: "arrow.triangle.2.circlepath") {
+                SettingsUtilityButton(title: "Check Updates", icon: "arrow.triangle.2.circlepath") {
                     updaterViewModel.checkForUpdates()
                 }
                 .disabled(!updaterViewModel.canCheckForUpdates)
                 
                 if let url = URL(string: "https://github.com/Sayitobar/CopyShot") {
-                    AboutButton(title: "Source Code", icon: "link") {
+                    SettingsUtilityButton(title: "Source Code", icon: "link") {
                         NSWorkspace.shared.open(url)
                     }
                 }
@@ -1140,7 +1152,7 @@ struct AboutSettingsView: View {
     }
 }
 
-struct AboutButton: View {
+struct SettingsUtilityButton: View {
     let title: String
     let icon: String
     let action: () -> Void
@@ -1174,11 +1186,42 @@ struct AboutButton: View {
             .opacity(isEnabled ? 1.0 : 0.4)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .help(title)
         .onHover { hovered in
             withAnimation(.easeInOut(duration: 0.2)) {
                 isHovered = hovered
             }
         }
+    }
+}
+
+/// Borderless row controls, including the red-on-hover Flyout Languages trash.
+struct SettingsIconButton: View {
+    let title: String
+    let icon: String
+    var isDestructive = false
+    var isExpanded: Bool? = nil
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if let isExpanded { DisclosureChevron(isExpanded: isExpanded) }
+                else { Image(systemName: icon) }
+            }
+                .font(.system(size: 11))
+                .foregroundStyle(isHovered ? (isDestructive ? Color.red : .primary) : .secondary.opacity(0.55))
+                .padding(4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered in
+            withAnimation(.easeInOut(duration: 0.15)) { isHovered = hovered }
+        }
+        .accessibilityLabel(title)
+        .help(title)
     }
 }
 
