@@ -73,6 +73,18 @@ UI tests use a unique `CopyShot.UITests.*` preferences suite through `COPYSHOT_U
 
 Focused unit coverage includes schema migration/reconciliation, provider compatibility and availability, barcode indexing, table escaping and canonical chaining, LaTeX cycling/query encoding, stale execution/animation results, navigation failures, submenu keyboard selection, and measured layout helpers.
 
+Custom Actions coverage adds metadata/discovery diagnostics, URL encoding and persistence, in-place and atomic script edits, removal/reinstallation preferences, large concurrent Unix streams, nonzero exits and invalid UTF-8, memory limits, deadline/cancellation races, running-HUD gating and live catalog updates. Execution fixtures inject a sandbox-inheriting `Process` backend and stay in private temporary directories; production exclusively uses `NSUserUnixTask`. These fixtures prove stream/lifecycle handling, not the native user-script sandbox exception.
+
+The Settings UI suite creates, edits disabled URL actions, cancels drafts, and deletes actions in light and dark appearances while checking stable window height. Test preferences and script discovery are isolated from normal user data.
+
+For signed-build verification, use **Open Actions Folder**, copy the bundled examples with Finder, enable them for OCR, and run each on a capture. Also install a short sleeping script and verify the running indicator, closing/new-capture behavior, and a custom wait limit. Verify that script side effects may continue after stopping the wait. Repeat on macOS 14 and 15+, and run the physical capture/window-routing checklist below; automated fixture tests cannot substitute for those OS and desktop checks.
+
+Implementation validation on macOS 15.7.3 additionally ran the production `UserScriptRunner` source in an ad-hoc signed application with only the App Sandbox entitlement and a separate verification bundle identifier. Externally installed synthetic scripts in that app’s Application Scripts directory preserved large Unicode/metacharacter input and trailing newlines while emitting stderr concurrently. A native deadline returned early, retained its invocation slot, and released it at the OS completion callback. This verifies the native scripting service and descriptor transfer on that host; it does not replace Finder installation, physical capture/HUD interaction, or macOS 14 validation. Those desktop/platform checks remain outstanding.
+
+The repo skill passed package validation and an isolated behavioral exercise generating an `open-url` script: eight exact decoded-query fixtures and two size-limit failures passed, without network requests or user-directory installation. Both bundled starter scripts passed shell syntax and synthetic text fixtures.
+
+The latest fast suite passed 143 tests, including immediate action resolution from published catalogs and script-slot reuse after cancellation. The initial Release validation built successfully, passed strict code-signature verification, retained App Sandbox, targeted macOS 14.0, and bundled both executable starter scripts. Focused URL CRUD UI checks passed in light and dark appearances. The latest full UI attempt timed out while enabling macOS automation before any tests ran; an earlier attempt was blocked by the accessibility screen-lock shield. Full UI verification remains outstanding.
+
 ## Manual capture and HUD check
 
 Run this when changing ScreenCaptureKit, overlay, HUD, or Settings layout code. Grant Screen Recording permission and use a normal app build.

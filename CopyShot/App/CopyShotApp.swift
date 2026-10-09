@@ -65,6 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     @Published var menuBarIconState: MenuBarIconState = .idle
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        CustomActionLibrary.shared.start()
         debugPrint("--- App is ready. Setting up services. ---")
         
         // 1. Set up the completion handler ONCE.

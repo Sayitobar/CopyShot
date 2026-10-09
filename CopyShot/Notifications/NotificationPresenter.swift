@@ -62,6 +62,10 @@ class NotificationPresenter: ObservableObject {
 
     private let configProvider: () -> QuickActionsConfig
     private let actionExecutor: any ActionExecuting
+    private let registryProvider: () -> ActionRegistry
+    private var catalogSubscription: AnyCancellable?
+    private var sessionAllowsQuickActions = false
+    private var usesRegistryActions = true
     private let copyText: (String) -> Void
     private let openURL: (URL) -> Bool
     private let animationScheduler: ((@escaping () -> Void) -> Void)?
@@ -75,6 +79,7 @@ class NotificationPresenter: ObservableObject {
         copyText: @escaping (String) -> Void = { ClipboardManager.copyToClipboard(text: $0) },
         openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) },
         animationScheduler: ((@escaping () -> Void) -> Void)? = nil,
+        actionLibrary: CustomActionLibrary? = nil,
         configProvider: @escaping () -> QuickActionsConfig = { SettingsManager.shared.quickActionsConfig },
         dismissScheduler: @escaping (TimeInterval, @escaping () -> Void) -> AnyCancellable = { duration, action in
         Just(true)
@@ -82,12 +87,17 @@ class NotificationPresenter: ObservableObject {
             .sink { _ in action() }
         }
     ) {
-        self.actionExecutor = actionExecutor ?? BuiltInActionExecutor()
+        self.actionExecutor = actionExecutor ?? ActionExecutor()
+        let library = actionLibrary ?? CustomActionLibrary.shared
+        self.registryProvider = { library.catalog.registry }
         self.copyText = copyText
         self.openURL = openURL
         self.animationScheduler = animationScheduler
         self.configProvider = configProvider
         self.dismissScheduler = dismissScheduler
+        self.catalogSubscription = library.$catalog.dropFirst().sink { [weak self] catalog in
+            self?.refreshQuickActions(registry: catalog.registry)
+        }
     }
 
     @Published var isShowingNotification: Bool = false
@@ -109,7 +119,8 @@ class NotificationPresenter: ObservableObject {
     }
     
     var targetScreen: NSScreen? = nil
-    var supportsQuickActions: Bool = false
+    @Published var supportsQuickActions: Bool = false
+    @Published private(set) var isRunningAction = false
     var quickActions: [QuickAction] = [] {
         didSet { shelfState.actions = quickActions }
     }
@@ -227,7 +238,8 @@ class NotificationPresenter: ObservableObject {
         supportsQuickActions: Bool = false,
         quickActions: [QuickAction]? = nil,
         captureMode: CaptureMode = .standardOCR,
-        actionContext: ActionContext? = nil
+        actionContext: ActionContext? = nil,
+        isRunningAction: Bool = false
     ) {
         // Dismiss any existing notification first
         dismissNotification()
@@ -237,8 +249,11 @@ class NotificationPresenter: ObservableObject {
         let context = actionContext ?? ActionContext(text: fullBody ?? body, mode: captureMode)
         self.currentActionContext = context
         self.currentCaptureMode = context.mode
+        self.isRunningAction = isRunningAction
+        self.sessionAllowsQuickActions = supportsQuickActions
+        self.usesRegistryActions = quickActions == nil
         self.quickActions = supportsQuickActions && config.isEnabled
-            ? (quickActions ?? ActionRegistry.shared.actions(context: context, config: config)) : []
+            ? (quickActions ?? registryProvider().actions(context: context, config: config)) : []
         if !self.quickActions.isEmpty {
             let heights = shelfMeasurements.prepare(actions: self.quickActions)
             mainShelfNaturalHeight = heights.main
@@ -285,29 +300,9 @@ class NotificationPresenter: ObservableObject {
         
         // Host the SwiftUI view in the window
         let generation = sessionGeneration
-        let notificationView = CustomNotificationView(
-            title: notificationTitle,
-            subtitle: notificationSubtitle,
-            bodyText: notificationBody,
-            fullBodyText: notificationFullBody,
-            iconName: notificationIconName,
-            customIcon: notificationCustomIcon,
-            accentColor: accentColor,
-            isVisible: Binding(
-                get: { [weak self] in self?.isShowingNotification ?? false },
-                set: { [weak self] newValue in self?.isShowingNotification = newValue }
-            ),
-            supportsQuickActions: self.supportsQuickActions,
-            isShelfOpen: Binding(
-                get: { [weak self] in self?.isShelfOpen ?? false },
-                set: { [weak self] newValue in self?.isShelfOpen = newValue }
-            ),
-            onHoverEnter: { [weak self] in
-                self?.handleNotificationHover(true)
-            },
-            onHoverExit: { [weak self] in
-                self?.handleNotificationHover(false)
-            },
+        let notificationView = NotificationHUDContent(
+            presenter: self,
+            onHoverChange: { [weak self] in self?.handleNotificationHover($0) },
             onClose: { [weak self] in
                 self?.hideNotificationWithAnimation()
             },
@@ -360,7 +355,7 @@ class NotificationPresenter: ObservableObject {
         
         shelfCloseToken = UUID()
         isShelfOpen = true
-        activeSubmenu = nil
+        closeSubShelfInstantly()
         isHoveringSubShelf = false
         hoverGraceTimer?.cancel()
         hoverGraceTimer = nil
@@ -651,6 +646,7 @@ class NotificationPresenter: ObservableObject {
     // MARK: - Dismissal Timers
     
     func startDismissTimer() {
+        guard !isRunningAction else { return }
         dismissTimer?.cancel()
         dismissTimer = dismissScheduler(notificationDuration) { [weak self] in
             self?.hideNotificationWithAnimation()
@@ -665,6 +661,7 @@ class NotificationPresenter: ObservableObject {
         sessionGeneration = UUID()
         executionTask?.cancel()
         executionTask = nil
+        isRunningAction = false
     }
 
     func dismissNotification(preservingSession: Bool = false) {
@@ -690,6 +687,7 @@ class NotificationPresenter: ObservableObject {
         notificationCustomIcon = nil
         quickActions = []
         supportsQuickActions = false
+        sessionAllowsQuickActions = false
         targetScreen = nil
     }
     
@@ -829,7 +827,7 @@ class NotificationPresenter: ObservableObject {
     }
     
     func actionForShortcut(_ digit: Int) -> QuickAction? {
-        guard (1...9).contains(digit) else { return nil }
+        guard !isRunningAction, (1...9).contains(digit) else { return nil }
         let actions = activeSubmenu?.subActions ?? (activeSubmenu == nil ? quickActions : [])
         return actions.first { $0.shortcutNumber == digit }
     }
@@ -849,16 +847,33 @@ class NotificationPresenter: ObservableObject {
     // MARK: - Action Execution & Feedback
     
     func triggerQuickAction(_ action: QuickAction) {
+        guard !isRunningAction else { return }
         if action.operation == .submenu {
             openSubShelf(for: action)
             return
         }
-        guard let context = currentActionContext, !context.text.isEmpty else { return }
+        guard let context = currentActionContext else { return }
+        if context.text.isEmpty {
+            guard case .custom = action.operation else { return }
+        }
         let config = configProvider()
         let screen = targetScreen
+        if case .custom(let descriptor) = action.operation, descriptor.isScript {
+            showNotification(title: action.title, subtitle: "Running script…",
+                             body: "Close this notification to stop waiting. The script may continue running.",
+                             customIcon: action.icon, accentColor: .adaptiveBlue, targetScreen: screen,
+                             duration: 0, actionContext: context, isRunningAction: true)
+            beginExecution(action, context: context, config: config, screen: screen, generation: sessionGeneration)
+            return
+        }
         let generation = sessionGeneration
         hideNotificationWithAnimation(preservingSession: true) { [weak self] in
             guard let self, self.sessionGeneration == generation else { return }
+            self.beginExecution(action, context: context, config: config, screen: screen, generation: generation)
+        }
+    }
+
+    private func beginExecution(_ action: QuickAction, context: ActionContext, config: QuickActionsConfig, screen: NSScreen?, generation: UUID) {
             self.executionTask?.cancel()
             self.executionTask = Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -866,10 +881,17 @@ class NotificationPresenter: ObservableObject {
                     let result = try await self.actionExecutor.execute(action, context: context, config: config)
                     guard !Task.isCancelled, self.sessionGeneration == generation else { return }
                     switch result {
+                    case .completed(let message):
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                        FeedbackManager.playSuccessSound()
+                        self.showNotification(title: "Quick Action: \(action.title)", body: message,
+                                              customIcon: action.icon, accentColor: .adaptiveGreen,
+                                              targetScreen: screen, supportsQuickActions: true, actionContext: context)
                     case .openURL(let url):
                         guard self.openURL(url) else { throw ActionExecutionError.invalidURL }
                         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                         FeedbackManager.playSuccessSound()
+                        self.dismissNotification()
                     case .copy(let updated, let subtitle):
                         self.copyText(updated.text)
                         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
@@ -886,9 +908,44 @@ class NotificationPresenter: ObservableObject {
                                           accentColor: .orange, targetScreen: screen)
                 }
             }
-        }
     }
 
+    private func refreshQuickActions(registry: ActionRegistry) {
+        guard sessionAllowsQuickActions, usesRegistryActions, !isRunningAction, let context = currentActionContext else { return }
+        let wasOpen = isShelfOpen
+        currentHoveredAction = nil
+        quickActions = registry.actions(context: context, config: configProvider())
+        supportsQuickActions = !quickActions.isEmpty
+        let heights = shelfMeasurements.prepare(actions: quickActions)
+        mainShelfNaturalHeight = heights.main
+        subShelfNaturalHeight = heights.submenu
+        if !supportsQuickActions { closeActionShelfInstantly() }
+        else if wasOpen { openActionShelf() }
+    }
+
+}
+
+/// Observe presentation values so library reloads update the existing HUD's controls.
+private struct NotificationHUDContent: View {
+    @ObservedObject var presenter: NotificationPresenter
+    let onHoverChange: (Bool) -> Void
+    let onClose: () -> Void
+    let onHeightChange: (CGFloat) -> Void
+    let onExpandShelf: () -> Void
+
+    var body: some View {
+        CustomNotificationView(
+            title: presenter.notificationTitle, subtitle: presenter.notificationSubtitle,
+            bodyText: presenter.notificationBody, fullBodyText: presenter.notificationFullBody,
+            iconName: presenter.notificationIconName, customIcon: presenter.notificationCustomIcon,
+            accentColor: presenter.notificationAccentColor,
+            isVisible: $presenter.isShowingNotification,
+            supportsQuickActions: presenter.supportsQuickActions,
+            isRunningAction: presenter.isRunningAction, isShelfOpen: $presenter.isShelfOpen,
+            onHoverEnter: { onHoverChange(true) }, onHoverExit: { onHoverChange(false) },
+            onClose: onClose, onHeightChange: onHeightChange, onExpandShelf: onExpandShelf
+        )
+    }
 }
 
 // MARK: - Action Shelf Reactive Container

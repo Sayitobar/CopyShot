@@ -10,8 +10,106 @@ import AppKit
 
 final class CopyShotUITests: XCTestCase {
 
+    @MainActor
+    func testCustomURLActionsCanBeCreatedEditedWhileDisabledAndDeleted() throws {
+        for appearance in ["Light", "Dark"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-testing-show-settings"]
+            app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+            app.launchEnvironment["COPYSHOT_UI_TEST_APPEARANCE"] = appearance
+            app.launch()
+            let window = app.windows["Settings"]
+            XCTAssertTrue(window.waitForExistence(timeout: 10))
+            window.buttons["settings-tab-Quick Actions"].click()
+            let addButton = window.buttons["qa-add-url"]
+            XCTAssertTrue(addButton.waitForExistence(timeout: 3))
+            let initialHeight = settledWindowHeight(window)
+            addButton.click()
+            let title = window.textFields["qa-url-title"]
+            XCTAssertTrue(title.waitForExistence(timeout: 3))
+            title.click()
+            title.typeText("A long custom action title that wraps naturally without changing window bounds")
+            let template = window.textFields["qa-url-template"]
+            template.click()
+            template.typeText("https://example.com/?q={text}")
+            window.buttons["qa-url-save"].click()
+            XCTAssertEqual(window.frame.height, initialHeight, accuracy: 1)
+            let edit = window.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "qa-edit-url-")).firstMatch
+            for _ in 0..<8 where !edit.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
+            XCTAssertTrue(edit.exists)
+            edit.click()
+            XCTAssertTrue(title.waitForExistence(timeout: 3))
+            XCTAssertEqual(window.frame.height, initialHeight, accuracy: 1)
+            let cancel = window.buttons["qa-url-cancel"]
+            for _ in 0..<8 where !cancel.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
+            cancel.click()
+            let delete = window.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "qa-delete-url-")).firstMatch
+            for _ in 0..<8 where !delete.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
+            delete.click()
+            window.buttons["Delete"].click()
+            XCTAssertFalse(edit.exists)
+            XCTAssertEqual(window.frame.height, initialHeight, accuracy: 1)
+            let screenshot = XCTAttachment(screenshot: window.screenshot())
+            screenshot.name = "Custom Actions \(appearance)"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    private func settledWindowHeight(_ window: XCUIElement) -> CGFloat {
+        var height = window.frame.height
+        var stableObservations = 0
+        let deadline = Date().addingTimeInterval(5)
+        while stableObservations < 5, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            let next = window.frame.height
+            stableObservations = abs(next - height) < 0.5 ? stableObservations + 1 : 0
+            height = next
+        }
+        return height
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
+    }
+
+    @MainActor
+    func testManyCustomActionsScrollWithinStableWindowBounds() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        app.launch()
+        let window = app.windows["Settings"]
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        window.buttons["settings-tab-Quick Actions"].click()
+        let addButton = window.buttons["qa-add-url"]
+        XCTAssertTrue(addButton.waitForExistence(timeout: 3))
+        let initialHeight = settledWindowHeight(window)
+        for index in 1...12 {
+            for _ in 0..<20 where !addButton.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
+            XCTAssertTrue(addButton.isHittable)
+            addButton.click()
+            let title = window.textFields["qa-url-title"]
+            XCTAssertTrue(title.waitForExistence(timeout: 3))
+            for _ in 0..<20 where !title.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
+            title.click()
+            title.typeText("Custom action \(index)")
+            let template = window.textFields["qa-url-template"]
+            template.click()
+            template.typeText("https://example.com/?q={text}")
+            let save = window.buttons["qa-url-save"]
+            for _ in 0..<20 where !save.isHittable { window.scrollViews.firstMatch.scroll(byDeltaX: 0, deltaY: -200) }
+            save.click()
+            XCTAssertEqual(window.frame.height, initialHeight, accuracy: 1)
+        }
+        XCTAssertEqual(window.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "qa-edit-url-")).count, 12)
+        XCTAssertTrue(window.scrollViews.firstMatch.exists)
+        let screenshot = XCTAttachment(screenshot: window.screenshot())
+        screenshot.name = "Many Custom Actions"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     @MainActor
@@ -55,7 +153,7 @@ final class CopyShotUITests: XCTestCase {
         let selector = window.descendants(matching: .any)["qa-mode-switcher"]
         XCTAssertTrue(heading.exists)
         XCTAssertLessThan(heading.frame.maxY, selector.frame.minY)
-        let initialHeight = window.frame.height
+        let initialHeight = settledWindowHeight(window)
         for (mode, action) in [("qrBarcode", "copy_raw"), ("latex", "search_math"), ("table", "table_markdown"), ("standardOCR", "join_lines")] {
             let segment = window.buttons["qa-mode-\(mode)"]
             segment.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.1)).click()

@@ -8,7 +8,7 @@ final class ActionExecutionTests: XCTestCase {
         for formula in ["$$x$", "$x$$"] {
             let context = ActionContext(payload: .latex(formula: formula))
             let action = QuickAction(id: "search_math", title: "Wolfram", icon: .system("function"), shortcutNumber: nil, operation: .wolfram)
-            let result = try await BuiltInActionExecutor().execute(action, context: context, config: .init())
+            let result = try await ActionExecutor().execute(action, context: context, config: .init())
             guard case .openURL(let url) = result else { return XCTFail("Expected URL") }
             XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first?.value, formula)
         }
@@ -17,7 +17,7 @@ final class ActionExecutionTests: XCTestCase {
     func testTableExportsEscapeCellsAndRetainCanonicalRows() async throws {
         let rows = [["a,b", "quote\"", "pipe|\\"], ["line\r\nbreak", "tab\tcell"], ["ä", "", ""]]
         let context = ActionContext(payload: .table(.init(rows: rows)))
-        let executor = BuiltInActionExecutor()
+        let executor = ActionExecutor()
         let csv = try await executor.execute(QuickAction(id: "csv", title: "CSV", icon: .system("tablecells"), shortcutNumber: nil, operation: .table(.csv)), context: context, config: .init())
         guard case .copy(let exported, _) = csv else { return XCTFail("Expected copied table") }
         XCTAssertEqual(exported.payload, context.payload)
@@ -40,17 +40,17 @@ final class ActionExecutionTests: XCTestCase {
         XCTAssertEqual(children.prefix(9).map(\.shortcutNumber), (1...9).map { Optional($0) })
         XCTAssertNil(children[9].shortcutNumber)
         XCTAssertEqual(children[10].helpText, codes[10].payload)
-        let result = try await BuiltInActionExecutor().execute(children[10], context: context, config: .init())
+        let result = try await ActionExecutor().execute(children[10], context: context, config: .init())
         guard case .openURL(let url) = result else { return XCTFail("Expected navigation") }
         XCTAssertEqual(url.absoluteString, codes[10].payload)
         let copy = QuickAction(id: "copy", title: "Copy", icon: .system("doc"), shortcutNumber: nil, operation: .copyBarcodes)
-        guard case .copy(let copied, _) = try await BuiltInActionExecutor().execute(copy, context: context, config: .init()) else { return XCTFail("Expected copied data") }
+        guard case .copy(let copied, _) = try await ActionExecutor().execute(copy, context: context, config: .init()) else { return XCTFail("Expected copied data") }
         XCTAssertEqual(copied.text, codes.map(\.payload).joined(separator: "\n"))
     }
 
     func testLaTeXCycleAndWolframEncoding() async throws {
         let raw = #"\frac{x + y}{2} & z"#
-        let executor = BuiltInActionExecutor()
+        let executor = ActionExecutor()
         var context = ActionContext(payload: .latex(formula: raw))
         let wrap = try XCTUnwrap(ActionRegistry.shared.actions(context: context, config: .init()).first)
         for expected in ["$\(raw)$", "$$\(raw)$$", raw] {

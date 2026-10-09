@@ -57,6 +57,7 @@ extension CaptureResult {
 
 enum TableExportFormat: Equatable { case markdown, csv, tsv }
 enum ActionOperation: Equatable {
+    case custom(CustomActionDescriptor)
     case transform
     case translate(String)
     case web(payloadIndex: Int?)

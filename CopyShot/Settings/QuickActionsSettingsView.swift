@@ -23,6 +23,9 @@ private func calculateDragOffset(index: Int, isDragging: Bool, dragStart: Int?, 
 /// Settings pane for configuring Quick Action ordering, visibility, action-specific parameters, and custom actions.
 struct QuickActionsSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
+    @ObservedObject private var actionLibrary = CustomActionLibrary.shared
+    @State private var customManagerExpanded = false
+    @State private var editingURLAction: CustomURLAction?
     @State private var expandedActionId: String? = nil
     var baselineMode: CaptureMode? = nil
     var externalSelectedMode: Binding<CaptureMode>? = nil
@@ -44,8 +47,9 @@ struct QuickActionsSettingsView: View {
     }
     
     private var mode: CaptureMode { baselineMode ?? activeSelectedMode.wrappedValue }
-    private var catalog: [ActionCatalogEntry] { ActionRegistry.shared.catalog(for: mode, config: settings.quickActionsConfig) }
-    private var scopedConfig: ModeActionConfiguration { settings.quickActionsConfig.modeConfiguration(for: mode) }
+    private var registry: ActionRegistry { baselineMode == nil ? actionLibrary.catalog.registry : .shared }
+    private var catalog: [ActionCatalogEntry] { registry.catalog(for: mode, config: settings.quickActionsConfig) }
+    private var scopedConfig: ModeActionConfiguration { settings.quickActionsConfig.modeConfiguration(for: mode, registry: registry) }
     @State private var showingResetConfirmation: Bool = false
     
     // Direct manipulation drag states
@@ -128,8 +132,15 @@ struct QuickActionsSettingsView: View {
                                     isEnabled: isEnabled,
                                     isExpanded: isExpanded,
                                     isDragging: isDragging,
+                                    isCustom: actionLibrary.catalog.action(id: actionId) != nil,
                                     onToggle: { toggleAction(id: actionId) },
                                     onExpand: {
+                                        if case .url(let link) = actionLibrary.catalog.action(id: actionId) {
+                                            editingURLAction = link
+                                            customManagerExpanded = true
+                                            expandedActionId = nil
+                                            return
+                                        }
                                         withAnimation(.easeInOut(duration: 0.2)) {
                                             expandedActionId = isExpanded ? nil : actionId
                                         }
@@ -153,12 +164,15 @@ struct QuickActionsSettingsView: View {
                                 .zIndex(isDragging ? 100 : 2)
                                 
                                 // Narrower Inset Configuration Drawer: Left edge at Action Icon (36), Right edge at Collapse Button (46)
-                                if baselineMode == nil && isExpanded && isEnabled && (metadata.hasParameters || metadata.hasSubActions) {
+                                if baselineMode == nil && isExpanded && (isEnabled || actionLibrary.catalog.action(id: actionId) != nil) && (metadata.hasParameters || metadata.hasSubActions) {
                                     VStack(spacing: 0) {
                                         HStack(spacing: 0) {
                                             Color.clear.frame(width: 36, height: 1)
                                             
-                                            ActionDrawerDetailView(actionId: actionId)
+                                            Group {
+                                                if let descriptor = actionLibrary.catalog.action(id: actionId) { CustomActionDetailsView(descriptor: descriptor) }
+                                                else { ActionDrawerDetailView(actionId: actionId) }
+                                            }
                                                 .frame(maxWidth: .infinity, alignment: .leading)
                                                 .padding(10)
                                                 .background(Color(NSColor.controlBackgroundColor).opacity(0.75))
@@ -190,13 +204,8 @@ struct QuickActionsSettingsView: View {
                     )
                 }
                 
-                VStack(alignment: .leading, spacing: 8) {
-                    SettingsSectionHeader(title: "Custom Actions")
-                    Label("Custom actions coming later", systemImage: "plus.circle.dashed")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(.secondary)
-                        .padding(10)
-                }
+                CustomActionsSettingsSection(library: actionLibrary, mode: mode, isBaseline: baselineMode != nil,
+                                             isExpanded: $customManagerExpanded, editing: $editingURLAction)
 
                 // MARK: - Reset to Defaults
                 HStack {
@@ -222,6 +231,14 @@ struct QuickActionsSettingsView: View {
             }
         }
         .onPreferenceChange(ActionRowHeightKey.self) { rowHeights = $0 }
+        .onReceive(actionLibrary.$catalog.dropFirst()) { _ in
+            expandedActionId = nil
+            draggingActionId = nil
+            dragStartIndex = nil
+            dragTargetIndex = nil
+            dragTranslation = 0
+            rowHeights = [:]
+        }
         .onChange(of: mode) {
             expandedActionId = nil
             draggingActionId = nil
@@ -259,7 +276,7 @@ struct QuickActionsSettingsView: View {
         }
         withAnimation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.25)) {
             scoped.disabledActionIds = disabled.sorted()
-            settings.quickActionsConfig.setModeConfiguration(scoped, for: mode)
+            settings.quickActionsConfig.setModeConfiguration(scoped, for: mode, registry: registry)
         }
     }
     
@@ -285,7 +302,8 @@ struct QuickActionsSettingsView: View {
     }
     
     private func handleMainDragEnded(activeOrder: [String]) {
-        guard let startIdx = dragStartIndex, let targetIdx = dragTargetIndex, let actionId = draggingActionId else {
+        guard let startIdx = dragStartIndex, let targetIdx = dragTargetIndex, let actionId = draggingActionId,
+              activeOrder.indices.contains(startIdx), activeOrder.indices.contains(targetIdx) else {
             draggingActionId = nil
             dragStartIndex = nil
             dragTargetIndex = nil
@@ -303,7 +321,7 @@ struct QuickActionsSettingsView: View {
                 order.insert(actionId, at: toIdx)
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                     scoped.actionOrder = order
-                    settings.quickActionsConfig.setModeConfiguration(scoped, for: mode)
+                    settings.quickActionsConfig.setModeConfiguration(scoped, for: mode, registry: registry)
                 }
             }
         }
@@ -327,6 +345,7 @@ private struct ActionRowView: View {
     let isEnabled: Bool
     let isExpanded: Bool
     let isDragging: Bool
+    var isCustom = false
     let onToggle: () -> Void
     let onExpand: () -> Void
     let onDragChanged: (CGFloat) -> Void
@@ -395,7 +414,7 @@ private struct ActionRowView: View {
                         .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(!isEnabled)
+                .disabled(!isEnabled && !isCustom)
                 .help(isExpanded ? "Hide Settings" : "Configure Action")
                 .accessibilityIdentifier("qa-configure-\(metadata.id)")
             }
@@ -814,5 +833,3 @@ private struct ActionDrawerDetailView: View {
         }
     }
 }
-
-

@@ -26,8 +26,8 @@ struct QuickActionsConfig: Codable, Equatable {
         return registry.reconcile(stored, for: mode)
     }
 
-    mutating func setModeConfiguration(_ value: ModeActionConfiguration, for mode: CaptureMode) {
-        modes[mode.rawValue] = ActionRegistry.shared.reconcile(value, for: mode)
+    mutating func setModeConfiguration(_ value: ModeActionConfiguration, for mode: CaptureMode, registry: ActionRegistry = .shared) {
+        modes[mode.rawValue] = registry.reconcile(value, for: mode)
     }
 
     // Source compatibility for existing OCR callers. Persistence uses only mode entries.

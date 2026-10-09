@@ -475,7 +475,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var baselineContentView: some View {
         if layoutTab == .quickActions {
-            QuickActionsSettingsBaselineView(mode: selectedQAMode)
+            QuickActionsSettingsBaselineView()
         } else if layoutTab == .capture {
             CaptureSettingsBaselineView()
         } else {

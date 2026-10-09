@@ -21,6 +21,7 @@ struct CustomNotificationView: View {
     @Binding var isVisible: Bool
     
     var supportsQuickActions: Bool = false
+    var isRunningAction: Bool = false
     @Binding var isShelfOpen: Bool
     
     var onHoverEnter: (() -> Void)? = nil
@@ -185,7 +186,12 @@ struct CustomNotificationView: View {
     @ViewBuilder
     private func notificationBox(expanded: Bool) -> some View {
         HStack(alignment: .top, spacing: 14) {
-            if let customIcon = customIcon {
+            if isRunningAction {
+                ProgressView().controlSize(.small)
+                    .frame(width: 30, height: 30)
+                    .accessibilityLabel("Running script")
+                    .accessibilityIdentifier("qa-running-script")
+            } else if let customIcon = customIcon {
                 ActionIconView(icon: customIcon, size: 24, isHovered: false, accentColor: accentColor)
                     .frame(width: 30, height: 30)
                     .shadow(color: enableIconShadow ? .black.opacity(0.4) : .clear, radius: 4, x: 0, y: 2)
@@ -248,6 +254,7 @@ struct CustomNotificationView: View {
                     )
                     .shadow(color: Color.black.opacity(0.2), radius: 3, x: 0, y: 1)
             }
+            .help(isRunningAction ? "Stop waiting (the script may continue running)" : "Close notification")
             .buttonStyle(.plain)
             .debugZone("Close", type: .interactive)
             .offset(x: -6, y: -6)

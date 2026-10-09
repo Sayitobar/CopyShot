@@ -3,6 +3,7 @@ import Foundation
 enum ActionResult {
     case copy(ActionContext, subtitle: String)
     case openURL(URL)
+    case completed(String)
 }
 
 @MainActor
@@ -22,7 +23,7 @@ enum ActionExecutionError: LocalizedError {
 }
 
 @MainActor
-struct BuiltInActionExecutor: ActionExecuting {
+struct ActionExecutor: ActionExecuting {
     var translate: (String, String) async throws -> TranslationResult = { text, language in
         try await withCheckedThrowingContinuation { continuation in
             TranslationService.shared.translate(text: text, targetLanguageCode: language) {
@@ -30,10 +31,25 @@ struct BuiltInActionExecutor: ActionExecuting {
             }
         }
     }
+    var scriptRunner: UserScriptRunner = .shared
+    var hasHandler: (URL) -> Bool = ActionURLHelper.hasHandler
 
     func execute(_ action: QuickAction, context: ActionContext, config: QuickActionsConfig) async throws -> ActionResult {
         try Task.checkCancellation()
         switch action.operation {
+        case .custom(let descriptor):
+            guard descriptor.metadata.supportedModes.contains(context.mode) else { throw ActionExecutionError.incompatiblePayload }
+            switch descriptor {
+            case .url(let link): return .openURL(try ActionURLHelper.expand(link.template, text: context.text, hasHandler: hasHandler))
+            case .script(let script):
+                let output = try await scriptRunner.run(script, input: context.text)
+                try Task.checkCancellation()
+                switch script.output {
+                case .copy: return .copy(context.replacingText(output), subtitle: "Processed text:")
+                case .openURL: return .openURL(try ActionURLHelper.validate(output, hasHandler: hasHandler))
+                case .none: return .completed("Script completed.")
+                }
+            }
         case .transform:
             return .copy(context.replacingText(action.transform(context.text)), subtitle: "Processed text:")
         case .translate(let language):
