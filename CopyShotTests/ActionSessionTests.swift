@@ -12,6 +12,41 @@ private final class DeferredActionExecutor: ActionExecuting {
 
 @MainActor
 final class ActionSessionTests: XCTestCase {
+    func testEmptyInspectionOpensWithoutCopyingAndLateInspectionDoesNotOpen() async throws {
+        var config = QuickActionsConfig()
+        config.disabledActionIds.removeAll { $0 == "inspect_capture" }
+        var copied: [String] = []
+        var opened: [OCRInspection] = []
+        let record = OCRInspectionTests.record(text: "")
+        let context = ActionContext(payload: .standardText(""), inspection: record)
+        let presenter = NotificationPresenter(copyText: { copied.append($0) }, animationScheduler: { $0() },
+                                              presentInspection: { opened.append($0); XCTAssertEqual($1, "") },
+                                              configProvider: { config })
+        presenter.showNotification(title: "No Text Found", body: "Empty", accentColor: .blue,
+                                   supportsQuickActions: true, actionContext: context)
+        presenter.triggerQuickAction(try XCTUnwrap(presenter.quickActions.first))
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(opened.count, 1)
+        XCTAssertTrue(opened.first === record)
+        XCTAssertTrue(copied.isEmpty)
+        XCTAssertFalse(presenter.isShowingNotification)
+
+        let executor = DeferredActionExecutor()
+        let delayed = NotificationPresenter(actionExecutor: executor, animationScheduler: { $0() },
+                                            presentInspection: { record, _ in opened.append(record) }, configProvider: { config })
+        delayed.showNotification(title: "Old", body: "Empty", accentColor: .blue,
+                                 supportsQuickActions: true, actionContext: context)
+        delayed.triggerQuickAction(try XCTUnwrap(delayed.quickActions.first))
+        for _ in 0..<20 where executor.completion == nil { await Task.yield() }
+        let completion = try XCTUnwrap(executor.completion)
+        delayed.showNotification(title: "New", body: "New", accentColor: .blue)
+        completion.resume(returning: .inspectCapture(record, currentText: ""))
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(opened.count, 1)
+        XCTAssertEqual(delayed.notificationTitle, "New")
+        delayed.dismissNotification()
+    }
+
     func testSubmenuDigitsNeverFallBackToParentActions() {
         let presenter = NotificationPresenter()
         presenter.quickActions = [QuickAction(id: "parent", title: "Parent", icon: .system("star"), shortcutNumber: 2)]

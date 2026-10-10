@@ -46,11 +46,14 @@
 | **Vision OCR Engine** | Accurate & Fast modes, with optional language correction and custom language sets. |
 | **Transparent Preprocessing** | Grayscale conversion (`CIPhotoEffectMono`) and 50% contrast enhancement for optimal text extraction. |
 | **Quick Actions** | Flyout action bars to transform text casing, strip line breaks, open URLs/search, and on-device translation.* |
+| **Capture Inspection** | Opt-in OCR Quick Action showing the original image, monochrome preview, exact OCR input, text bounding boxes, and assembled output. Disabled by default. |
 | **Settings Interface** | Bespoke SwiftUI layout with per-mode configurations and direct-manipulation action reordering. |
 | **Resource Friendly** | Sub-100ms pipeline, asynchronous prewarming, 60s idle model eviction, and minimal CPU/RAM footprint. |
 | **Auto-Update** | Background update checks powered securely by Sparkle. |
 
 *\*Note: On-device translation requires macOS 15.0 (Sequoia) or later. The first time a new language set is used, macOS will prompt you once to download Apple's on-device neural language set directly onto your Mac. Other Quick Actions are fully supported on macOS 14 (Sonoma)+.*
+
+Enable **Inspect Capture** in **Settings → Quick Actions → OCR** before capturing. The action opens a resizable inspection window for that capture, including when no text is found. Select a processing stage to view its image or text, zoom into the captured image, and select numbered text regions to match them to their bounding boxes. If a text Quick Action changes the output, inspection retains the original result and shows the transformed text separately. Opening inspection does not rerun OCR or change the clipboard. Images remain in memory only while the capture HUD or inspection window owns them; inspection creates no image files or history. When the action is disabled, CopyShot uses its existing text-only capture flow.
 
 ### Multimodal Capture Modes
 
@@ -188,8 +191,8 @@ Once it's set up, CopyShot should run & appear in your menu bar. If you're going
   <summary>Click to expand</summary>
 
 ### Visual Inspection & Transparency
-- Live interactive preview showing preprocessed image filters (grayscale, binarization, contrast).
-- Visual bounding-box debugging showing detected text, table cells, or barcode matrix geometries.
+- Interactive previews for future preprocessing controls, including binarization.
+- Extend capture inspection to table cells and barcode geometries.
 
 ### OCR & Language Improvements
 - Personal glossary for domain-specific vocabulary and custom corrections.

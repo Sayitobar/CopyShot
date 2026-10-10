@@ -19,6 +19,11 @@ struct QuickActionsConfig: Codable, Equatable {
     var disabledSubActionIds: [String: [String]] = [:]
     var modes: [String: ModeActionConfiguration] = ActionRegistry.defaultModeConfigurations
 
+    var inspectionEnabled: Bool {
+        let scoped = modeConfiguration(for: .standardOCR)
+        return isEnabled && scoped.actionOrder.contains("inspect_capture") && !scoped.disabledActionIds.contains("inspect_capture")
+    }
+
     init() {}
 
     func modeConfiguration(for mode: CaptureMode, registry: ActionRegistry = .shared) -> ModeActionConfiguration {

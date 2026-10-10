@@ -44,6 +44,11 @@ final class CapturePipeline {
     typealias Recognizer = (CGImage, @escaping @MainActor (Result<CaptureResult, Error>) -> Void) -> Void
     typealias CancellableRecognizer = (CGImage, RecognitionCancellation, @escaping @MainActor (Result<CaptureResult, Error>) -> Void) -> Void
 
+    typealias InspectionRecognizer = (CGImage, RecognitionCancellation, @escaping @MainActor (Result<CaptureResult, Error>, OCRInspection) -> Void) -> Void
+
+    private let inspectingOCR: InspectionRecognizer?
+    private let inspectionEnabled: () -> Bool
+    private let deliverInspection: ((Outcome, NSScreen?, OCRInspection) -> Void)?
     private let isLatest: (UUID) -> Bool
     private let recognizers: [CaptureMode: CancellableRecognizer]
     private let deliver: (Outcome, NSScreen?) -> Void
@@ -61,8 +66,14 @@ final class CapturePipeline {
     init(isLatest: @escaping (UUID) -> Bool,
          cancellableRecognizers: [CaptureMode: CancellableRecognizer],
          onRecognitionStarted: @escaping (CaptureMode) -> Void = { _ in },
+         inspectingOCR: InspectionRecognizer? = nil,
+         inspectionEnabled: @escaping () -> Bool = { false },
+         deliverInspection: ((Outcome, NSScreen?, OCRInspection) -> Void)? = nil,
          deliver: @escaping (Outcome, NSScreen?) -> Void) {
         self.isLatest = isLatest
+        self.inspectingOCR = inspectingOCR
+        self.inspectionEnabled = inspectionEnabled
+        self.deliverInspection = deliverInspection
         self.recognizers = cancellableRecognizers
         self.onRecognitionStarted = onRecognitionStarted
         self.deliver = deliver
@@ -88,15 +99,24 @@ final class CapturePipeline {
         let cancellation = RecognitionCancellation()
         recognition = cancellation
         onRecognitionStarted(mode)
-        recognizer(image, cancellation) { [weak self] result in
+        let finish: @MainActor (Result<CaptureResult, Error>, OCRInspection?) -> Void = { [weak self] result, inspection in
             guard let self, !cancellation.isCancelled, self.isLatest(requestID) else { return }
             if self.recognition === cancellation { self.recognition = nil }
+            let outcome: Outcome
             switch result {
-            case .success(let content):
-                self.deliver(content.isEmpty ? .noContent(mode) : .result(content), screen)
-            case .failure(let error):
-                self.deliver(.failed(mode, error), screen)
+            case .success(let content): outcome = content.isEmpty ? .noContent(mode) : .result(content)
+            case .failure(let error): outcome = .failed(mode, error)
             }
+            if let inspection, let deliverInspection = self.deliverInspection {
+                deliverInspection(outcome, screen, inspection)
+            } else {
+                self.deliver(outcome, screen)
+            }
+        }
+        if mode == .standardOCR, inspectionEnabled(), let inspectingOCR, deliverInspection != nil {
+            inspectingOCR(image, cancellation) { result, inspection in finish(result, inspection) }
+        } else {
+            recognizer(image, cancellation) { result in finish(result, nil) }
         }
     }
 }

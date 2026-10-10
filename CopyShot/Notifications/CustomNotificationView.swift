@@ -18,8 +18,6 @@ struct CustomNotificationView: View {
     
     @Environment(\.colorScheme) var colorScheme
     
-    @Binding var isVisible: Bool
-    
     var supportsQuickActions: Bool = false
     var isRunningAction: Bool = false
     @Binding var isShelfOpen: Bool
@@ -109,12 +107,7 @@ struct CustomNotificationView: View {
             .padding(.leading, 12)
             .padding(.bottom, 28)
             .padding(.top, 14)
-            .offset(y: isVisible ? 0 : -100)
-            .opacity(isVisible ? 1 : 0)
-            .animation(.spring(response: 0.5, dampingFraction: 0.7, blendDuration: 0), value: isVisible)
-            .onAppear {
-                isVisible = true
-            }
+            // The presenter fades the window; keep the HUD stationary throughout dismissal.
             
             // Push content to the top
             Spacer(minLength: 0)

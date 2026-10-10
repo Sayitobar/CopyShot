@@ -67,6 +67,7 @@ class NotificationPresenter: ObservableObject {
     private var sessionAllowsQuickActions = false
     private var usesRegistryActions = true
     private let copyText: (String) -> Void
+    private let presentInspection: @MainActor (OCRInspection, String) -> Void
     private let openURL: (URL) -> Bool
     private let animationScheduler: ((@escaping () -> Void) -> Void)?
     private var executionTask: Task<Void, Never>?
@@ -79,6 +80,9 @@ class NotificationPresenter: ObservableObject {
         copyText: @escaping (String) -> Void = { ClipboardManager.copyToClipboard(text: $0) },
         openURL: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) },
         animationScheduler: ((@escaping () -> Void) -> Void)? = nil,
+        presentInspection: @escaping @MainActor (OCRInspection, String) -> Void = { record, text in
+            OCRInspectionWindow.shared.show(record: record, currentText: text)
+        },
         actionLibrary: CustomActionLibrary? = nil,
         configProvider: @escaping () -> QuickActionsConfig = { SettingsManager.shared.quickActionsConfig },
         dismissScheduler: @escaping (TimeInterval, @escaping () -> Void) -> AnyCancellable = { duration, action in
@@ -91,6 +95,7 @@ class NotificationPresenter: ObservableObject {
         let library = actionLibrary ?? CustomActionLibrary.shared
         self.registryProvider = { library.catalog.registry }
         self.copyText = copyText
+        self.presentInspection = presentInspection
         self.openURL = openURL
         self.animationScheduler = animationScheduler
         self.configProvider = configProvider
@@ -853,7 +858,7 @@ class NotificationPresenter: ObservableObject {
             return
         }
         guard let context = currentActionContext else { return }
-        if context.text.isEmpty {
+        if context.text.isEmpty && action.operation != .inspectCapture {
             guard case .custom = action.operation else { return }
         }
         let config = configProvider()
@@ -881,6 +886,9 @@ class NotificationPresenter: ObservableObject {
                     let result = try await self.actionExecutor.execute(action, context: context, config: config)
                     guard !Task.isCancelled, self.sessionGeneration == generation else { return }
                     switch result {
+                    case .inspectCapture(let record, let currentText):
+                        self.dismissNotification()
+                        self.presentInspection(record, currentText)
                     case .completed(let message):
                         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
                         FeedbackManager.playSuccessSound()
@@ -939,7 +947,6 @@ private struct NotificationHUDContent: View {
             bodyText: presenter.notificationBody, fullBodyText: presenter.notificationFullBody,
             iconName: presenter.notificationIconName, customIcon: presenter.notificationCustomIcon,
             accentColor: presenter.notificationAccentColor,
-            isVisible: $presenter.isShowingNotification,
             supportsQuickActions: presenter.supportsQuickActions,
             isRunningAction: presenter.isRunningAction, isShelfOpen: $presenter.isShelfOpen,
             onHoverEnter: { onHoverChange(true) }, onHoverExit: { onHoverChange(false) },

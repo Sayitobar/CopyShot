@@ -65,6 +65,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             }
         ],
         onRecognitionStarted: { [weak self] _ in self?.menuBarIconState = .recognizing },
+        inspectingOCR: { image, cancellation, completion in
+            OCRService.performOCRWithInspection(on: image, cancellation: cancellation) { result, record in
+                Task { @MainActor in
+                    switch result {
+                    case .success(let text): completion(.success(.standardText(text)), record)
+                    case .failure(let error): completion(.failure(error), record)
+                    }
+                }
+            }
+        },
+        inspectionEnabled: { SettingsManager.shared.quickActionsConfig.inspectionEnabled },
+        deliverInspection: { [weak self] outcome, screen, inspection in
+            self?.presentCaptureOutcome(outcome, screen: screen, inspection: inspection)
+        },
         deliver: { [weak self] outcome, screen in
             self?.presentCaptureOutcome(outcome, screen: screen)
         }
@@ -109,8 +123,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
         if ProcessInfo.processInfo.arguments.contains("--ui-testing-show-settings") {
             DispatchQueue.main.async {
-                SettingsWindowManager.shared.showSettings()
                 #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--ui-testing-inspection") {
+                    let record = OCRInspectionFixture.make(empty: ProcessInfo.processInfo.arguments.contains("--ui-testing-inspection-empty"))
+                    let text = ProcessInfo.processInfo.arguments.contains("--ui-testing-inspection-transformed")
+                        ? record.assembledText.uppercased() : record.assembledText
+                    OCRInspectionWindow.shared.show(record: record, currentText: text)
+                } else {
+                    SettingsWindowManager.shared.showSettings()
+                }
                 if ProcessInfo.processInfo.arguments.contains("--ui-testing-qa-fixture") {
                     let context = ActionContext(payload: .barcodes((0..<36).map {
                         DetectedBarcode(payload: "Sample barcode \($0 + 1)", symbology: "QR")
@@ -120,6 +141,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         accentColor: .adaptiveGreen, duration: 120, supportsQuickActions: true, actionContext: context
                     )
                 }
+                #else
+                SettingsWindowManager.shared.showSettings()
                 #endif
             }
         }
@@ -138,7 +161,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         captureManager.startCapture()
     }
 
-    private func presentCaptureOutcome(_ outcome: CapturePipeline.Outcome, screen: NSScreen?) {
+    private func presentCaptureOutcome(_ outcome: CapturePipeline.Outcome, screen: NSScreen?, inspection: OCRInspection? = nil) {
         switch outcome {
         case .cancelled:
             FeedbackManager.showNotification(
@@ -162,7 +185,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 iconName: "questionmark.circle.fill",
                 accentColor: .adaptiveBlue,
                 soundName: "Bottle",
-                targetScreen: screen
+                targetScreen: screen,
+                supportsQuickActions: inspection != nil,
+                actionContext: inspection.map { ActionContext(payload: .standardText(""), inspection: $0) }
             )
             resetIcon()
         case .result(let result):
@@ -193,7 +218,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 targetScreen: screen,
                 supportsQuickActions: presentation.quickActions && SettingsManager.shared.quickActionsConfig.isEnabled,
                 captureMode: presentation.mode,
-                actionContext: ActionContext(payload: result)
+                actionContext: ActionContext(payload: result, inspection: inspection)
             )
             setSuccessIcon()
         case .failed(let mode, let error):
@@ -206,7 +231,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 iconName: "exclamationmark.triangle.fill",
                 accentColor: .adaptiveOrange,
                 soundName: "Sosumi",
-                targetScreen: screen
+                targetScreen: screen,
+                supportsQuickActions: inspection != nil,
+                actionContext: inspection.map { ActionContext(payload: .standardText(""), inspection: $0) }
             )
             resetIcon()
         }

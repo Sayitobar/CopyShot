@@ -256,7 +256,7 @@ final class QuickActionsTests: XCTestCase {
         
         XCTAssertEqual(decoded, config)
         XCTAssertFalse(decoded.isEnabled)
-        XCTAssertEqual(decoded.actionOrder, ["search_web", "join_lines", "change_case", "translate"])
+        XCTAssertEqual(decoded.actionOrder, ["search_web", "join_lines", "change_case", "translate", "inspect_capture"])
         XCTAssertEqual(decoded.disabledActionIds, ["join_lines"])
         XCTAssertEqual(decoded.searchEngine, .duckDuckGo)
         XCTAssertEqual(decoded.defaultTranslateLanguage, "de")
@@ -286,7 +286,7 @@ final class QuickActionsTests: XCTestCase {
     
     func testDisablingSpecificActions() {
         var config = QuickActionsConfig()
-        config.actionOrder = ["change_case", "join_lines", "search_web", "translate"]
+        config.actionOrder = ["change_case", "join_lines", "search_web", "translate", "inspect_capture"]
         config.disabledActionIds = ["join_lines"]
         
         let actions = QuickAction.actions(for: "Sample text", config: config)
@@ -382,7 +382,7 @@ final class QuickActionsTests: XCTestCase {
         XCTAssertTrue(settings.quickActionsConfig.isEnabled)
         XCTAssertEqual(settings.quickActionsConfig.searchEngine, .google)
         XCTAssertTrue(settings.quickActionsConfig.showNumericShortcuts)
-        XCTAssertEqual(settings.quickActionsConfig.actionOrder, ["change_case", "join_lines", "search_web", "translate"])
+        XCTAssertEqual(settings.quickActionsConfig.actionOrder, ["change_case", "join_lines", "search_web", "translate", "inspect_capture"])
     }
     
     @MainActor

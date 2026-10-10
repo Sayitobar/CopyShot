@@ -4,9 +4,11 @@ struct ActionContext: Equatable {
     let sessionID: UUID
     var payload: CaptureResult
     var text: String
+    let inspection: OCRInspection?
 
-    init(sessionID: UUID = UUID(), payload: CaptureResult, text: String? = nil) {
+    init(sessionID: UUID = UUID(), payload: CaptureResult, text: String? = nil, inspection: OCRInspection? = nil) {
         self.sessionID = sessionID
+        self.inspection = inspection
         self.payload = payload
         self.text = text ?? payload.actionText
     }
@@ -58,6 +60,7 @@ extension CaptureResult {
 enum TableExportFormat: Equatable { case markdown, csv, tsv }
 enum ActionOperation: Equatable {
     case custom(CustomActionDescriptor)
+    case inspectCapture
     case transform
     case translate(String)
     case web(payloadIndex: Int?)

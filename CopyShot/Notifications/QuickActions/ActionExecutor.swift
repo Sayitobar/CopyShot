@@ -1,6 +1,7 @@
 import Foundation
 
 enum ActionResult {
+    case inspectCapture(OCRInspection, currentText: String)
     case copy(ActionContext, subtitle: String)
     case openURL(URL)
     case completed(String)
@@ -37,6 +38,11 @@ struct ActionExecutor: ActionExecuting {
     func execute(_ action: QuickAction, context: ActionContext, config: QuickActionsConfig) async throws -> ActionResult {
         try Task.checkCancellation()
         switch action.operation {
+        case .inspectCapture:
+            guard context.mode == .standardOCR, let inspection = context.inspection else {
+                throw ActionExecutionError.incompatiblePayload
+            }
+            return .inspectCapture(inspection, currentText: context.text)
         case .custom(let descriptor):
             guard descriptor.metadata.supportedModes.contains(context.mode) else { throw ActionExecutionError.incompatiblePayload }
             switch descriptor {

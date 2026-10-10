@@ -72,7 +72,10 @@ struct ActionRegistry {
         guard config.isEnabled else { return [] }
         let map = Dictionary(uniqueKeysWithValues: definitions.map { ($0.metadata.id, $0) })
         return catalog(for: context.mode, config: config)
-            .filter { $0.isEnabled && $0.unavailableReason == nil }
+            .filter {
+                $0.isEnabled && $0.unavailableReason == nil &&
+                !(context.inspection != nil && context.text.isEmpty && $0.metadata.id != "inspect_capture")
+            }
             .compactMap { map[$0.metadata.id]?.makeAction(context, config) }
             .enumerated().map { index, action in action.numbered(index + 1) }
     }
@@ -109,6 +112,12 @@ struct BuiltInActionProvider: ActionProvider {
                                    shortcutNumber: nil, operation: .web(payloadIndex: nil))
             },
             ocr("translate", "Translate", "Translate on this Mac.", .system("globe"), submenu: true, parameters: [.translateLanguage], translation: true),
+            definition("inspect_capture", "Inspect Capture", "See the captured image, preprocessing, and recognized text locations.",
+                       .system("viewfinder"), modes: [.standardOCR]) { context, _ in
+                guard context.inspection != nil else { return nil }
+                return QuickAction(id: "inspect_capture", title: "Inspect Capture", icon: .system("viewfinder"),
+                                   shortcutNumber: nil, operation: .inspectCapture)
+            },
             definition("copy_raw", "Copy Raw Data", "Copy every recognized barcode payload.", .system("doc.on.doc"), modes: [.qrBarcode]) { _, _ in
                 QuickAction(id: "copy_raw", title: "Copy Raw Data", icon: .system("doc.on.doc"), shortcutNumber: nil, operation: .copyBarcodes)
             },
