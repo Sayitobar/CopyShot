@@ -10,12 +10,27 @@ The LaTeX capture mode runs the [Pix2Text MFR 1.5](https://huggingface.co/breeze
 - **Output Format**: Raw LaTeX math string (e.g., `x^{2} + y^{2} = z^{2}`), trimmed of outer whitespace and copied directly to the clipboard.
 - **Scope**: Designed for tightly-cropped single formulas (display or inline). No layout/formula detector (MFD) is bundled; mixed paragraphs with text and formulas are not segmented.
 
-## POC Setup (Current)
+## Download & Installation
 
-Run `sh scripts/install-mfr-1.5.sh` once on a machine with internet access. The script downloads `encoder_model.onnx` (~87.5 MB), `decoder_model.onnx` (~32 MB), and `tokenizer.json` (~113 KB) into:
+Open **Settings → Capture → Mode Configuration → LaTeX → MFR Model → Download…**. A native macOS window explains the one-time 120 MB download before you choose **Download**. The same window appears after a LaTeX screen selection if the model is missing, regardless of how that mode was selected (default mode, remembered mode, radial menu, or menu-bar capture).
+
+The window shows Apple's native progress bar, downloaded bytes and percentage, followed by a verification stage. Cancel or close the window to stop the download; failed downloads offer Retry. One window and one download are shared across requests. After successful installation, an awaiting capture resumes only if it is still current. When opened from settings, the window stays on its completed state until Done. Other capture modes remain available.
+
+The app fetches three fixed files from Hugging Face at revision `1cef9f0bdcd6a4c63df7de1311fb0894593340cc`: `encoder_model.onnx` (87,510,770 bytes), `decoder_model.onnx` (32,026,253 bytes), and `tokenizer.json` (113,168 bytes). Downloads are staged inside Application Support, checked for exact size and SHA-256, and installed as a complete set. Interrupted or corrupt downloads never become an installed model.
+
+The model card identifies Pix2Text MFR 1.5 as MIT-licensed; attribution and model information are available through the downloader's **Model information** link. This downloads model data only, never executable code or remote recognition services. Hugging Face and its download infrastructure receive normal GET-request metadata such as the user's IP address; screenshots and recognized formulas are never sent.
+
+The existing outgoing-network entitlement covers downloads. No new Screen Recording or broader file access is requested. Models live in CopyShot's own Application Support directory:
+
 `~/Library/Containers/com.sayitobar.CopyShot/Data/Library/Application Support/CopyShot/MFR-1.5/`
 
-Sessions are initialized lazily on the first LaTeX capture and reused on a background serial queue. They unload after 60 seconds without LaTeX recognition, or on warning/critical memory pressure. Both eviction and inference use the same serial queue so an active inference completes before its model is released. Missing resources report an error in the HUD and leave the clipboard intact.
+The installed-state button opens this directory in Finder. Bundle resources and the diagnostic `COPYSHOT_MFR_MODEL_DIR` override are also supported. A complete local model avoids the download prompt.
+
+## Developer Setup & Runtime
+
+The existing `sh scripts/install-mfr-1.5.sh` remains an alternative for development. End users no longer need to run it.
+
+Sessions are initialized lazily on the first LaTeX capture and reused on a background serial queue. By default they unload after 60 seconds without LaTeX recognition, or on warning/critical memory pressure. Both eviction and inference use the same serial queue so an active inference completes before its model is released. The menu bar shows an animated spinner during recognition and resets on completion. No recognition timeout is added. Download cancellation and recognition failures leave the clipboard intact.
 
 Decoder outputs and input tensors are drained through an autorelease pool per token. Greedy decoding scans the final vocabulary position directly in the tensor buffer, avoiding a copy of logits for every earlier position. DEBUG logs separate model loading from inference.
 
@@ -24,19 +39,3 @@ The local recognition benchmark on September 30, 2026 used a 17-token synthetic 
 Recreating sessions for each capture trades roughly the measured load cost for lower idle RAM. The recognition prewarmer (`RecognitionPrewarmer.swift`) mitigates this by asynchronously prewarming the formula engine during overlay interaction whenever LaTeX is the active default mode or selected in the radial menu. The current 60-second idle cache keeps repeated captures fast and releases the model when it is no longer being used. Actual recognition triggers reloading after eviction.
 
 See [TESTING.md](TESTING.md) for the reproducible cold/reused session benchmark. ONNX Runtime also retains allocator resources for reuse; its [memory documentation](https://onnxruntime.ai/docs/performance/tune-performance/memory.html) describes allocator-sharing options. Tensor lifetime fixes alone do not remove retained session weights and workspaces.
-
----
-
-## Target Implementation Plan (On-Demand Model Manager)
-
-To keep CopyShot featherweight (~10 MB) while preserving 100% on-device privacy:
-
-1. **Lightweight Distribution**: Do not bundle the ~120 MB model files inside the base release DMG.
-2. **First-Use Prompt**: Selecting LaTeX mode when uninstalled prompts the user:
-   > *"LaTeX recognition runs locally using the Pix2Text model (~120 MB). No images or data ever leave your Mac.*  
-   > *[ Download Model ] [ Cancel ]"*
-3. **Settings Management ("Models / LaTeX")**:
-   - Status indicator (`Installed (~120 MB)` / `Not Installed`).
-   - One-click `Download Model` and `Delete Model` buttons (allowing users to reclaim disk space).
-4. **Air-Gapped / Offline Import**:
-   - A `Locate / Import Model...` button allowing enterprise or air-gapped users to import the three model files locally without an internet connection.

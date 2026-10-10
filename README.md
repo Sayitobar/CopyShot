@@ -64,7 +64,7 @@ During a capture, right-click and drag through the radial menu to choose OCR, QR
   - *Capabilities & Limitations*: Accurately captures single-line grid data (with or without visible borders, including sparse/empty cells). Wrapped multi-line text inside a single cell or merged cells (`rowspan`/`colspan`) are partitioned into separate rows/columns.
 - **LaTeX Formulas**:
   - Scales the raw cropped equation capture onto a $384 \times 384$ canvas and decodes it locally via [Pix2Text MFR 1.5](https://huggingface.co/breezedeus/pix2text-mfr-1.5) using ONNX Runtime (up to 1,024 tokens).
-  - *Output format*: Raw LaTeX math string. Requires [MFR 1.5 setup](docs/MFR_SETUP.md).
+  - *Output format*: Raw LaTeX math string. Download the model once (120 MB) from **Settings → Capture → Mode Configuration → LaTeX → MFR Model**, or follow the downloader shown on your first LaTeX capture. See [MFR 1.5 setup](docs/MFR_SETUP.md).
 
 ---
 
@@ -105,9 +105,9 @@ CopyShot runs as an ultra-lightweight menu bar utility (`LSUIElement`) with a di
 ---
 
 ## Privacy
-CopyShot respects your privacy. Capture recognition runs locally using Apple's Vision framework or the installed MFR 1.5 ONNX model. The app **does not access any of your personal files**. Your captured images and extracted text remain entirely on your Mac.
+CopyShot respects your privacy. Capture recognition runs locally using Apple's Vision framework or the installed MFR 1.5 ONNX model. The app **does not access any of your personal files**. Your captured images and extracted text remain entirely on your Mac. Network access is used for update checks and, when you choose Download, fetching the LaTeX model from Hugging Face. The model download sends no captures or recognized text; the hosting service receives standard download-request metadata such as your IP address.
 
-*Network Note: Since v1.1, CopyShot requires outbound internet access exclusively and only to check for application updates securely via the Sparkle framework.*
+*Network Note: CopyShot uses its existing outbound-network permission for Sparkle update checks and user-initiated LaTeX model downloads. Recognition remains on-device and works offline once the model is installed.*
 
 ---
 

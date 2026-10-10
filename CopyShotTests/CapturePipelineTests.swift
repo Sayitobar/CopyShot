@@ -5,6 +5,21 @@ import Testing
 @Suite("Capture mode routing")
 @MainActor
 struct CapturePipelineTests {
+    @Test("The latest capture reports recognition activity before starting its worker")
+    func recognitionActivity() throws {
+        let image = try #require(Self.makeImage())
+        let latest = UUID()
+        var events: [String] = []
+        let pipeline = CapturePipeline(isLatest: { $0 == latest }, cancellableRecognizers: [
+            .latex: { _, _, _ in events.append("worker") }
+        ], onRecognitionStarted: { mode in events.append(mode.rawValue) }, deliver: { _, _ in })
+        pipeline.completeCapture(image: image, screen: nil, mode: .latex, requestID: UUID())
+        pipeline.completeCapture(image: nil, screen: nil, mode: .latex, requestID: latest)
+        #expect(events.isEmpty)
+        pipeline.completeCapture(image: image, screen: nil, mode: .latex, requestID: latest)
+        #expect(events == [CaptureMode.latex.rawValue, "worker"])
+    }
+
     @Test("Replacing recognition cancels its work and still delivers the latest capture")
     func replacementCancelsRecognition() throws {
         let image = try #require(Self.makeImage())

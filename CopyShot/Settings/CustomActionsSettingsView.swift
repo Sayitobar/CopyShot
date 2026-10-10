@@ -8,6 +8,7 @@ struct CustomActionsSettingsSection: View {
     @Binding var editing: CustomURLAction?
     @State private var expandedActionID: String?
     @State private var infoExpanded = false
+    @State private var infoHovered = false
     @State private var deleting: CustomActionDescriptor?
     @State private var isRemoving = false
     @State private var removalError: String?
@@ -124,13 +125,16 @@ struct CustomActionsSettingsSection: View {
                     Image(systemName: "info.circle")
                     Text("Using Custom Actions")
                     Spacer(minLength: 0)
-                    DisclosureChevron(isExpanded: infoExpanded && !isBaseline)
+                    SettingsIconLabel(icon: "chevron.down", isExpanded: infoExpanded && !isBaseline, isHovered: infoHovered)
                 }
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.secondary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .onHover { hovered in
+                withAnimation(.easeInOut(duration: 0.15)) { infoHovered = hovered }
+            }
             .accessibilityIdentifier("qa-custom-help")
             if infoExpanded && !isBaseline {
                 VStack(alignment: .leading, spacing: 6) {

@@ -291,17 +291,11 @@ private final class LoadedModel {
     let tokenizer: MFRTokenizer
 
     init() throws {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("CopyShot/MFR-1.5", isDirectory: true)
-        let bundled = Bundle.main.resourceURL?.appendingPathComponent("MFR-1.5", isDirectory: true)
-        let override = ProcessInfo.processInfo.environment["COPYSHOT_MFR_MODEL_DIR"].map {
-            URL(fileURLWithPath: $0, isDirectory: true)
-        }
-        let directory = override ?? bundled.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil } ?? appSupport
+        let directory = MFRModelResources.recognitionDirectory
         let encoderURL = directory.appendingPathComponent("encoder_model.onnx")
         let decoderURL = directory.appendingPathComponent("decoder_model.onnx")
         let tokenizerURL = directory.appendingPathComponent("tokenizer.json")
-        guard [encoderURL, decoderURL, tokenizerURL].allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
+        guard MFRModelResources.isComplete(directory) else {
             throw FormulaRecognitionError.missingResources(directory)
         }
         environment = try ORTEnv(loggingLevel: .warning)

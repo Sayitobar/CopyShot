@@ -47,6 +47,7 @@ final class CapturePipeline {
     private let isLatest: (UUID) -> Bool
     private let recognizers: [CaptureMode: CancellableRecognizer]
     private let deliver: (Outcome, NSScreen?) -> Void
+    private let onRecognitionStarted: (CaptureMode) -> Void
     private var recognition: RecognitionCancellation?
 
     convenience init(isLatest: @escaping (UUID) -> Bool,
@@ -59,9 +60,11 @@ final class CapturePipeline {
 
     init(isLatest: @escaping (UUID) -> Bool,
          cancellableRecognizers: [CaptureMode: CancellableRecognizer],
+         onRecognitionStarted: @escaping (CaptureMode) -> Void = { _ in },
          deliver: @escaping (Outcome, NSScreen?) -> Void) {
         self.isLatest = isLatest
         self.recognizers = cancellableRecognizers
+        self.onRecognitionStarted = onRecognitionStarted
         self.deliver = deliver
     }
 
@@ -84,6 +87,7 @@ final class CapturePipeline {
         }
         let cancellation = RecognitionCancellation()
         recognition = cancellation
+        onRecognitionStarted(mode)
         recognizer(image, cancellation) { [weak self] result in
             guard let self, !cancellation.isCancelled, self.isLatest(requestID) else { return }
             if self.recognition === cancellation { self.recognition = nil }

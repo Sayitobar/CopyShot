@@ -10,6 +10,37 @@ import AppKit
 
 final class CopyShotUITests: XCTestCase {
     @MainActor
+    func testMissingMFRModelOpensNativeDownloaderFromLaTeXSettings() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        app.launchEnvironment["COPYSHOT_UI_TEST_APPEARANCE"] = "Light"
+        app.launchEnvironment["COPYSHOT_MFR_MODEL_DIR"] = NSTemporaryDirectory() + "CopyShot.MissingMFR.\(UUID().uuidString)"
+        app.launch()
+        let settings = app.windows["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.buttons["settings-tab-Capture"].click()
+        settings.buttons["capture-mode-latex"].click()
+        let download = settings.buttons["settings-mfr-model"]
+        XCTAssertTrue(download.waitForExistence(timeout: 3))
+        download.click()
+        let downloader = app.windows["LaTeX Model"]
+        XCTAssertTrue(downloader.waitForExistence(timeout: 3))
+        XCTAssertTrue(downloader.buttons["mfr-download-start"].exists)
+        XCTAssertTrue(downloader.staticTexts["Pix2Text MFR 1.5 · 120 MB"].exists)
+        let screenshot = XCTAttachment(screenshot: downloader.screenshot())
+        screenshot.name = "Native MFR Model Download Prompt"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        downloader.buttons["Cancel"].click()
+        XCTAssertFalse(downloader.exists)
+        XCTAssertTrue(settings.exists)
+        download.click()
+        XCTAssertTrue(downloader.waitForExistence(timeout: 3))
+        downloader.buttons["Cancel"].click()
+    }
+
+    @MainActor
     func testSelectiveResetCanBeCancelledAndOnlyResetsChosenPage() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-show-settings"]
@@ -34,22 +65,28 @@ final class CopyShotUITests: XCTestCase {
         generalScreenshot.lifetime = .keepAlways
         add(generalScreenshot)
         window.buttons["settings-reset"].click()
-        let reset = app.buttons["settings-reset-confirm"]
+        let resetWindow = app.windows["Reset Settings"]
+        XCTAssertTrue(resetWindow.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.sheets.firstMatch.exists)
+        let reset = resetWindow.buttons["settings-reset-confirm"]
         XCTAssertTrue(reset.waitForExistence(timeout: 3))
         XCTAssertFalse(reset.isEnabled)
-        app.checkBoxes["settings-reset-page-notifications"].click()
-        let sheet = app.sheets.firstMatch
-        let resetScreenshot = XCTAttachment(screenshot: sheet.exists ? sheet.screenshot() : window.screenshot())
+        resetWindow.checkBoxes["settings-reset-page-notifications"].click()
+        let resetScreenshot = XCTAttachment(screenshot: resetWindow.screenshot())
         resetScreenshot.name = "Selective Settings Reset"
         resetScreenshot.lifetime = .keepAlways
         add(resetScreenshot)
-        app.buttons["settings-reset-cancel"].click()
+        resetWindow.buttons["settings-reset-cancel"].click()
+        XCTAssertFalse(resetWindow.exists)
         window.buttons["settings-tab-Notifications"].click()
         XCTAssertEqual(preview.value as? String, "12")
         window.buttons["settings-tab-General"].click()
         window.buttons["settings-reset"].click()
-        app.checkBoxes["settings-reset-page-notifications"].click()
+        XCTAssertTrue(resetWindow.waitForExistence(timeout: 3))
+        XCTAssertFalse(reset.isEnabled)
+        resetWindow.checkBoxes["settings-reset-page-notifications"].click()
         reset.click()
+        XCTAssertFalse(resetWindow.exists)
         XCTAssertEqual(window.frame.height, originalHeight, accuracy: 1)
         XCTAssertEqual(String(describing: window.radioButtons["Light"].value ?? ""), "1")
         window.buttons["settings-tab-Notifications"].click()

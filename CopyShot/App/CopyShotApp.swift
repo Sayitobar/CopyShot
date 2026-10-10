@@ -40,14 +40,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 }
             },
             .latex: { [weak self] image, cancellation, completion in
-                self?.formulaService.recognize(image, cancellation: cancellation) { result in
-                    Task { @MainActor in
-                        completion(result.map {
-                            CaptureResult.latex(
-                                formula: $0.formula,
-                                statusNote: $0.wasSyntaxFixed ? "Fixed broken syntax" : nil
-                            )
-                        })
+                guard let self else { return }
+                if !MFRModelManager.shared.isAvailable { self.resetIcon() }
+                MFRModelDownloadWindow.shared.requireModel(cancellation: cancellation) { [weak self] ready in
+                    guard let self, !cancellation.isCancelled else { return }
+                    guard ready else { completion(.failure(MFRDownloadError.cancelled)); return }
+                    self.menuBarIconState = .recognizing
+                    self.formulaService.recognize(image, cancellation: cancellation) { result in
+                        Task { @MainActor in
+                            completion(result.map {
+                                CaptureResult.latex(
+                                    formula: $0.formula,
+                                    statusNote: $0.wasSyntaxFixed ? "Fixed broken syntax" : nil
+                                )
+                            })
+                        }
                     }
                 }
             },
@@ -57,12 +64,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 }
             }
         ],
+        onRecognitionStarted: { [weak self] _ in self?.menuBarIconState = .recognizing },
         deliver: { [weak self] outcome, screen in
             self?.presentCaptureOutcome(outcome, screen: screen)
         }
     )
     
     @Published var menuBarIconState: MenuBarIconState = .idle
+    private var iconResetWork: DispatchWorkItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         CustomActionLibrary.shared.start()
@@ -122,6 +131,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // This function handles the capture hotkey.
     @objc func captureHotkeyDidFire() {
         debugPrint("--- Capture hotkey fired! Starting capture... ---")
+        iconResetWork?.cancel()
+        iconResetWork = nil
         menuBarIconState = .capturing
         FeedbackManager.shared.presenter.dismissNotification()
         captureManager.startCapture()
@@ -202,14 +213,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
     
     private func setSuccessIcon() {
+        iconResetWork?.cancel()
         menuBarIconState = .success
-        // After a delay, revert to the idle icon.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            self.menuBarIconState = .idle
+        let reset = DispatchWorkItem { [weak self] in
+            guard let self, self.menuBarIconState == .success else { return }
+            self.resetIcon()
         }
+        iconResetWork = reset
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0, execute: reset)
     }
     
     private func resetIcon() {
+        iconResetWork?.cancel()
+        iconResetWork = nil
         menuBarIconState = .idle
     }
     
@@ -264,22 +280,27 @@ struct CopyShotApp: App {
         MenuBarExtra(content: {
             CopyShotMenu(appDelegate: appDelegate, updaterViewModel: updaterViewModel)
         }, label: {
-            let state = appDelegate.menuBarIconState
-            if state == .idle {
-                // Resize the custom asset to be menu-bar friendly (e.g. 18x18 pts)
-                // This prevents large images from blowing up the menu bar size.
-                if let nsImage = NSImage(named: state.rawValue) {
-                    Image(nsImage: {
-                        nsImage.size = NSSize(width: 22, height: 22)
-                        return nsImage
-                    }())
-                } else {
-                    Image(systemName: "camera.viewfinder") // Fallback
-                }
-            } else {
-                 Image(systemName: state.rawValue) // SF Symbol
-            }
+            CopyShotMenuBarIcon(appDelegate: appDelegate)
         })
+    }
+}
+
+/// The menu bar label must observe state directly to redraw independently of the app's scene.
+struct CopyShotMenuBarIcon: View {
+    @ObservedObject var appDelegate: AppDelegate
+
+    var body: some View {
+        let state = appDelegate.menuBarIconState
+        if state == .recognizing {
+            MenuBarRecognitionSpinner()
+        } else if state == .idle, let nsImage = NSImage(named: state.rawValue) {
+            Image(nsImage: {
+                nsImage.size = NSSize(width: 22, height: 22)
+                return nsImage
+            }())
+        } else {
+            Image(systemName: state == .idle ? "camera.viewfinder" : state.rawValue)
+        }
     }
 }
 

@@ -637,7 +637,6 @@ struct SettingsRow<Control: View>: View {
 struct GeneralSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
     @EnvironmentObject var updaterViewModel: UpdaterViewModel
-    @State private var showingReset = false
     
     var body: some View {
         VStack(spacing: 24) {
@@ -664,7 +663,7 @@ struct GeneralSettingsView: View {
                 .frame(width: 200) // Fixed width for uniformity
             }
             Button("Reset Settings") {
-                showingReset = true
+                SettingsResetWindow.shared.show(settings: settings, updater: updaterViewModel)
             }
             .buttonStyle(.plain)
             .font(.system(size: 11))
@@ -672,7 +671,6 @@ struct GeneralSettingsView: View {
             .frame(maxWidth: .infinity)
             .accessibilityIdentifier("settings-reset")
         }
-        .sheet(isPresented: $showingReset) { SettingsResetSheet() }
     }
 }
 
@@ -992,6 +990,8 @@ struct CaptureSettingsView: View {
             SettingsRow(label: "Model Memory", tooltip: "Determines how long the Pix2Text MFR 1.5 model remains in RAM after capture.\nImmediately: Frees memory right after every capture.\nNever: Keeps model resident for instantaneous subsequent inferences.", zIndexValue: 5) {
                 ModelUnloadSlider(policy: $settings.mfrUnloadPolicy)
             }
+
+            MFRModelSettingsRow()
         }
     }
     
@@ -1207,14 +1207,7 @@ struct SettingsIconButton: View {
 
     var body: some View {
         Button(action: action) {
-            Group {
-                if let isExpanded { DisclosureChevron(isExpanded: isExpanded) }
-                else { Image(systemName: icon) }
-            }
-                .font(.system(size: 11))
-                .foregroundStyle(isHovered ? (isDestructive ? Color.red : .primary) : .secondary.opacity(0.55))
-                .padding(4)
-                .contentShape(Rectangle())
+            SettingsIconLabel(icon: icon, isExpanded: isExpanded, isHovered: isHovered, isDestructive: isDestructive)
         }
         .buttonStyle(.plain)
         .onHover { hovered in
@@ -1222,6 +1215,25 @@ struct SettingsIconButton: View {
         }
         .accessibilityLabel(title)
         .help(title)
+    }
+}
+
+/// Shared glyph styling for borderless controls and full-row disclosures.
+struct SettingsIconLabel: View {
+    let icon: String
+    var isExpanded: Bool? = nil
+    var isHovered = false
+    var isDestructive = false
+
+    var body: some View {
+        Group {
+            if let isExpanded { DisclosureChevron(isExpanded: isExpanded) }
+            else { Image(systemName: icon) }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(isHovered ? (isDestructive ? Color.red : .primary) : .secondary.opacity(0.55))
+        .padding(4)
+        .contentShape(Rectangle())
     }
 }
 
