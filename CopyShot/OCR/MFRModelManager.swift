@@ -99,6 +99,7 @@ final class MFRModelManager: ObservableObject {
             return Task { true }
         }
         let id = UUID()
+        DiagnosticLog.shared.record(.modelDownloadStarted)
         generation = id
         let total = files.reduce(Int64(0)) { $0 + $1.bytes }
         state = .downloading(received: 0, total: total)
@@ -141,8 +142,10 @@ final class MFRModelManager: ObservableObject {
                 guard generation == id else { return false }
                 try MFRModelInstaller.install(staging, at: directory)
                 state = .installed
+                DiagnosticLog.shared.record(.modelDownloadSucceeded)
                 return true
             } catch {
+                DiagnosticLog.shared.record(error is CancellationError ? .modelDownloadCancelled : .modelDownloadFailed, error: error)
                 if generation == id {
                     state = error is CancellationError ? .notInstalled : .failed(error.localizedDescription)
                 }

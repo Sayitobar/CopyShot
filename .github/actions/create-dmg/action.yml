@@ -49,6 +49,7 @@ runs:
         rm -rf dmg-stage
         mkdir -p dmg-stage
         cp -R "$APP_PATH" "dmg-stage/$APP_NAME"
+        scripts/verify-release.sh "dmg-stage/$APP_NAME"
         ln -s /Applications "dmg-stage/Applications"
         
         # Create a hidden .background directory

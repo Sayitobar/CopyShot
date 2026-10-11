@@ -863,6 +863,14 @@ class NotificationPresenter: ObservableObject {
         }
         let config = configProvider()
         let screen = targetScreen
+        if case .translate = action.operation {
+            showNotification(title: action.title, subtitle: "Translating…",
+                             body: "Complete any Apple language-download prompt. Close this notification to cancel.",
+                             customIcon: action.icon, accentColor: .adaptiveBlue, targetScreen: screen,
+                             duration: 0, actionContext: context, isRunningAction: true)
+            beginExecution(action, context: context, config: config, screen: screen, generation: sessionGeneration)
+            return
+        }
         if case .custom(let descriptor) = action.operation, descriptor.isScript {
             showNotification(title: action.title, subtitle: "Running script…",
                              body: "Close this notification to stop waiting. The script may continue running.",
@@ -882,6 +890,8 @@ class NotificationPresenter: ObservableObject {
             self.executionTask?.cancel()
             self.executionTask = Task { @MainActor [weak self] in
                 guard let self else { return }
+                let diagnosticKind = DiagnosticActionKind(action.operation)
+                DiagnosticLog.shared.record(.actionStarted, action: diagnosticKind)
                 do {
                     let result = try await self.actionExecutor.execute(action, context: context, config: config)
                     guard !Task.isCancelled, self.sessionGeneration == generation else { return }
@@ -909,7 +919,10 @@ class NotificationPresenter: ObservableObject {
                                               fullBody: updated.text, customIcon: action.icon, accentColor: .adaptiveGreen,
                                               targetScreen: screen, supportsQuickActions: true, actionContext: updated)
                     }
+                    DiagnosticLog.shared.record(.actionSucceeded, action: diagnosticKind)
                 } catch {
+                    DiagnosticLog.shared.record(error is CancellationError || Task.isCancelled ? .actionCancelled : .actionFailed,
+                                                action: diagnosticKind, error: error)
                     guard !Task.isCancelled, self.sessionGeneration == generation else { return }
                     self.showNotification(title: "Quick Action Failed", subtitle: action.title,
                                           body: error.localizedDescription, iconName: "exclamationmark.triangle.fill",

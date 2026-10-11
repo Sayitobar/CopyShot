@@ -88,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var iconResetWork: DispatchWorkItem?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        DiagnosticLog.shared.record(.appStarted)
         CustomActionLibrary.shared.start()
         debugPrint("--- App is ready. Setting up services. ---")
         
@@ -108,7 +109,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
         
         // 2. Register and listen for hotkeys.
-        HotkeyManager.shared.registerHotkeys()
+        // Settings fixtures can coexist with an installed/running CopyShot instance.
+        // Recording a candidate still exercises native registration from HotkeyField.
+        if !ProcessInfo.processInfo.arguments.contains("--ui-testing-show-settings") {
+            HotkeyManager.shared.registerHotkeys()
+        }
         
         // Listen for capture hotkey
         NotificationCenter.default.addObserver(
@@ -124,7 +129,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         if ProcessInfo.processInfo.arguments.contains("--ui-testing-show-settings") {
             DispatchQueue.main.async {
                 #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("--ui-testing-inspection") {
+                if ProcessInfo.processInfo.arguments.contains("--ui-testing-welcome") {
+                    WelcomeWindow.shared.show { [weak self] in self?.captureHotkeyDidFire() }
+                } else if ProcessInfo.processInfo.arguments.contains("--ui-testing-inspection") {
                     let record = OCRInspectionFixture.make(empty: ProcessInfo.processInfo.arguments.contains("--ui-testing-inspection-empty"))
                     let text = ProcessInfo.processInfo.arguments.contains("--ui-testing-inspection-transformed")
                         ? record.assembledText.uppercased() : record.assembledText
@@ -145,14 +152,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 SettingsWindowManager.shared.showSettings()
                 #endif
             }
+        } else if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            DispatchQueue.main.async { [weak self] in
+                WelcomeWindow.shared.showIfNeeded { [weak self] in self?.captureHotkeyDidFire() }
+            }
         }
         
         debugPrint("--- Setup complete. Waiting for hotkeys. ---")
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        DiagnosticLog.shared.record(.appTerminated)
+        DiagnosticLog.shared.flushOnTermination()
     }
     
     
     // This function handles the capture hotkey.
     @objc func captureHotkeyDidFire() {
+        WelcomeWindow.shared.close()
         debugPrint("--- Capture hotkey fired! Starting capture... ---")
         iconResetWork?.cancel()
         iconResetWork = nil
@@ -164,6 +181,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private func presentCaptureOutcome(_ outcome: CapturePipeline.Outcome, screen: NSScreen?, inspection: OCRInspection? = nil) {
         switch outcome {
         case .cancelled:
+            DiagnosticLog.shared.record(.captureCancelled)
             FeedbackManager.showNotification(
                 title: "Capture Cancelled",
                 body: "The screen capture was cancelled or failed.",
@@ -174,6 +192,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             )
             resetIcon()
         case .noContent(let mode):
+            DiagnosticLog.shared.record(.captureEmpty, mode: mode)
             #if DEBUG
             CaptureBenchmarkTracker.shared.recordOCRCompleted()
             #endif
@@ -207,6 +226,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 presentation = ("Table Copied", "Recognized cells:", table.tabSeparatedText, true, .table)
             }
             ClipboardManager.copyToClipboard(text: presentation.text)
+            DiagnosticLog.shared.record(.captureSucceeded, mode: presentation.mode)
             FeedbackManager.showNotification(
                 title: presentation.title,
                 subtitle: presentation.subtitle,
@@ -222,6 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             )
             setSuccessIcon()
         case .failed(let mode, let error):
+            DiagnosticLog.shared.record(.captureFailed, mode: mode, error: error)
             #if DEBUG
             CaptureBenchmarkTracker.shared.recordOCRCompleted()
             #endif
@@ -273,9 +294,12 @@ final class UpdaterViewModel: ObservableObject {
         }
     }
     private var cancellables = Set<AnyCancellable>()
+    private let diagnosticDelegate: UpdateDiagnosticDelegate
     
     init() {
-        self.controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        let delegate = UpdateDiagnosticDelegate()
+        self.diagnosticDelegate = delegate
+        self.controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: delegate, userDriverDelegate: nil)
         self.automaticallyChecksForUpdates = self.controller.updater.automaticallyChecksForUpdates
         
         self.controller.updater.publisher(for: \.canCheckForUpdates)
@@ -288,6 +312,15 @@ final class UpdaterViewModel: ObservableObject {
     
     func checkForUpdates() {
         self.controller.checkForUpdates(nil)
+    }
+}
+
+private final class UpdateDiagnosticDelegate: NSObject, SPUUpdaterDelegate {
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        let failure = error as NSError
+        if failure.domain == SUSparkleErrorDomain,
+           [Int(SUError.noUpdateError.rawValue), Int(SUError.installationCanceledError.rawValue)].contains(failure.code) { return }
+        DiagnosticLog.shared.record(.updateFailed, error: error)
     }
 }
 
@@ -334,6 +367,7 @@ struct CopyShotMenuBarIcon: View {
 struct CopyShotMenu: View {
     var appDelegate: AppDelegate
     @ObservedObject var updaterViewModel: UpdaterViewModel
+    private let debugOverlay = SettingsManager.shared.debugOverlay
     
     var body: some View {
         Button("Capture Text") {
@@ -347,6 +381,12 @@ struct CopyShotMenu: View {
             SettingsWindowManager.shared.showSettings(updaterViewModel: updaterViewModel)
         }
         .keyboardShortcut(",", modifiers: .command)
+
+        if debugOverlay.isEnabled {
+            Button("Welcome to CopyShot… (DEBUG)") {
+                WelcomeWindow.shared.show { appDelegate.captureHotkeyDidFire() }
+            }
+        }
         
         Button("Check for Updates...") {
             updaterViewModel.checkForUpdates()

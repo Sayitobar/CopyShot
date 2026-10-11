@@ -5,7 +5,7 @@
 # @copyshot.icon list.number
 # @copyshot.modes standardOCR
 # @copyshot.output copy
-# @copyshot.timeout 30
+# @copyshot.timeout 15
 
 # Use on text containing line numbers: a leading year followed by a space is
 # indistinguishable from a line number. Decimal values and dates remain intact.

@@ -8,10 +8,51 @@
 import Testing
 import Foundation
 import Carbon
+import Vision
 @testable import CopyShot
 
 @Suite("SettingsManager Tests")
 struct SettingsManagerTests {
+    @Test("Welcome is shown once per preferences domain, including existing users, and survives settings reset")
+    func testWelcomeStatePersistsIndependentlyOfSettingsReset() throws {
+        let suite = "CopyShotTests.welcome.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: SettingsKeys.prewarmRecognition) // Existing preferences do not suppress v2 introduction.
+        let settings = SettingsManager(defaults: defaults)
+        #expect(!settings.hasSeenWelcome)
+        settings.hasSeenWelcome = true
+        settings.reset(pages: Set(SettingsResetPage.allCases))
+        #expect(SettingsManager(defaults: defaults).hasSeenWelcome)
+    }
+
+    @Test("Fast OCR offers and submits only languages supported at that level without losing saved choices")
+    func testFastLanguagesMatchRequestLevel() throws {
+        let suite = "CopyShotTests.fastLanguages.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsManager(defaults: defaults)
+        let fast = VNRecognizeTextRequest()
+        fast.recognitionLevel = .fast
+        let supported = try fast.supportedRecognitionLanguages()
+        let accurate = VNRecognizeTextRequest()
+        accurate.recognitionLevel = .accurate
+        let accurateLanguages = try accurate.supportedRecognitionLanguages()
+        let accurateOnly = try #require(accurateLanguages.first { !supported.contains($0) })
+        settings.recognitionLanguages = [accurateOnly]
+        settings.recognitionLevel = .fast
+        #expect(settings.supportedLanguages == supported)
+        let configuration = OCRService.Configuration(settings: settings)
+        #expect(!configuration.languages.isEmpty)
+        #expect(configuration.languages.allSatisfy { supported.contains($0) })
+        #expect(settings.recognitionLanguages == [accurateOnly])
+        settings.recognitionLevel = .accurate
+        #expect(OCRService.Configuration(settings: settings).languages == [accurateOnly])
+        settings.recognitionLanguages = [supported[0], accurateOnly]
+        settings.recognitionLevel = .fast
+        #expect(OCRService.Configuration(settings: settings).languages == [supported[0]])
+    }
+
     @Test("Selective notification reset leaves capture and action settings intact")
     func testSelectiveNotificationReset() throws {
         let suite = "CopyShotTests.reset.\(UUID().uuidString)"

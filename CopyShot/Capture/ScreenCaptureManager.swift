@@ -73,7 +73,8 @@ class ScreenCaptureManager: NSObject {
     /// Pre-warms ScreenCaptureKit and system privacy permissions in the background during app startup.
     func prewarm() {
         Task(priority: .background) {
-            _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            do { _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) }
+            catch { DiagnosticLog.shared.record(.prewarmFailed, error: error) }
         }
     }
 
@@ -84,6 +85,7 @@ class ScreenCaptureManager: NSObject {
         previousApp = NSWorkspace.shared.frontmostApplication
         onSessionReset?()
         let initialMode = SettingsManager.shared.initialCaptureMode()
+        DiagnosticLog.shared.record(.captureStarted, mode: initialMode)
         if initialMode == SettingsManager.shared.defaultCaptureMode {
             onPrewarmRequested?(initialMode)
         }
@@ -101,6 +103,7 @@ class ScreenCaptureManager: NSObject {
             guard requestState.isCurrent(requestID) else { return }
             streamContent = content
         } catch {
+            DiagnosticLog.shared.record(.capturePermissionFailed, error: error)
             log("Permission Error: \(error.localizedDescription)", type: .error)
             complete(with: nil, for: requestID)
             return
@@ -197,12 +200,14 @@ class ScreenCaptureManager: NSObject {
     private func captureSelection(for requestID: UUID) async {
         guard requestState.isCurrent(requestID) else { return }
         guard let content = streamContent, let selection = selectedRegion else {
+            DiagnosticLog.shared.record(.captureStateMissing)
             log("Error: Missing shareable content or selection data.", type: .error)
             complete(with: nil, for: requestID)
             return
         }
         
         guard let targetDisplay = findMatchingDisplay(for: selection.screen, in: content) else {
+            DiagnosticLog.shared.record(.captureDisplayMissing, mode: selection.mode)
             log("Error: Could not find matching SCDisplay for screen.", type: .error)
             complete(with: nil, for: requestID)
             return
@@ -219,6 +224,7 @@ class ScreenCaptureManager: NSObject {
             log("Frame captured successfully (\(cgImage.width)x\(cgImage.height) px).")
             complete(with: cgImage, for: requestID)
         } catch {
+            DiagnosticLog.shared.record(.screenshotFailed, mode: selection.mode, error: error)
             log("SCScreenshotManager capture failed: \(error.localizedDescription)", type: .error)
             complete(with: nil, for: requestID)
         }

@@ -12,9 +12,9 @@ The LaTeX capture mode runs the [Pix2Text MFR 1.5](https://huggingface.co/breeze
 
 ## Download & Installation
 
-Open **Settings → Capture → Mode Configuration → LaTeX → MFR Model → Download…**. A native macOS window explains the one-time 120 MB download before you choose **Download**. The same window appears after a LaTeX screen selection if the model is missing, regardless of how that mode was selected (default mode, remembered mode, radial menu, or menu-bar capture).
+Open **Settings → Capture → Mode Configuration → LaTeX → MFR Model → Download…**. The same window appears after a LaTeX screen selection if the model is missing, regardless of how that mode was selected (default mode, remembered mode, radial menu, or menu-bar capture).
 
-The window shows Apple's native progress bar, downloaded bytes and percentage, followed by a verification stage. Cancel or close the window to stop the download; failed downloads offer Retry. One window and one download are shared across requests. After successful installation, an awaiting capture resumes only if it is still current. When opened from settings, the window stays on its completed state until Done. Other capture modes remain available.
+The window shows progress bar, downloaded bytes and percentage, followed by a verification stage. Cancel or close the window to stop the download; failed downloads offer Retry. One window and one download are shared across requests. After successful installation, an awaiting capture resumes only if it is still current. When opened from settings, the window stays on its completed state until Done. Other capture modes remain available.
 
 The app fetches three fixed files from Hugging Face at revision `1cef9f0bdcd6a4c63df7de1311fb0894593340cc`: `encoder_model.onnx` (87,510,770 bytes), `decoder_model.onnx` (32,026,253 bytes), and `tokenizer.json` (113,168 bytes). Downloads are staged inside Application Support, checked for exact size and SHA-256, and installed as a complete set. Interrupted or corrupt downloads never become an installed model.
 
@@ -28,7 +28,7 @@ The installed-state button opens this directory in Finder. Bundle resources and 
 
 ## Developer Setup & Runtime
 
-The existing `sh scripts/install-mfr-1.5.sh` remains an alternative for development. End users no longer need to run it.
+The existing `sh scripts/install-mfr-1.5.sh` remains an alternative for development. End users do not need to run it.
 
 Sessions are initialized lazily on the first LaTeX capture and reused on a background serial queue. By default they unload after 60 seconds without LaTeX recognition, or on warning/critical memory pressure. Both eviction and inference use the same serial queue so an active inference completes before its model is released. The menu bar shows an animated spinner during recognition and resets on completion. No recognition timeout is added. Download cancellation and recognition failures leave the clipboard intact.
 

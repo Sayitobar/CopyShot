@@ -12,6 +12,28 @@ private final class DeferredActionExecutor: ActionExecuting {
 
 @MainActor
 final class ActionSessionTests: XCTestCase {
+    func testTranslationKeepsWaitingHUDVisibleAndClosingSuppressesLateCopy() async throws {
+        let executor = DeferredActionExecutor()
+        var copied: [String] = []
+        let presenter = NotificationPresenter(actionExecutor: executor, copyText: { copied.append($0) }, animationScheduler: { $0() })
+        let context = ActionContext(payload: .standardText("Hallo"))
+        presenter.showNotification(title: "Capture", body: context.text, accentColor: .green,
+                                   supportsQuickActions: true, actionContext: context)
+        let action = QuickAction(id: "translation", title: "Translate", icon: .system("character.bubble"), shortcutNumber: 1, operation: .translate("en"))
+        presenter.triggerQuickAction(action)
+        XCTAssertTrue(presenter.isRunningAction)
+        XCTAssertTrue(presenter.isShowingNotification)
+        XCTAssertNil(presenter.actionForShortcut(1))
+        for _ in 0..<30 where executor.completion == nil { await Task.yield() }
+        let completion = try XCTUnwrap(executor.completion)
+        presenter.dismissNotification()
+        completion.resume(returning: .copy(context.replacingText("Hello"), subtitle: "Translated"))
+        for _ in 0..<30 { await Task.yield() }
+        XCTAssertTrue(copied.isEmpty)
+        XCTAssertFalse(presenter.isShowingNotification)
+        XCTAssertFalse(presenter.isRunningAction)
+    }
+
     func testEmptyInspectionOpensWithoutCopyingAndLateInspectionDoesNotOpen() async throws {
         var config = QuickActionsConfig()
         config.disabledActionIds.removeAll { $0 == "inspect_capture" }

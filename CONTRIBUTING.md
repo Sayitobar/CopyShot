@@ -7,8 +7,8 @@ Thank you for your interest in improving CopyShot! Whether you are fixing a bug 
 ## 🛠️ Development Setup
 
 ### Prerequisites
-- **macOS**: 14.0 (Sonoma) or newer.
-- **Xcode**: 16.0 or newer (supports Swift 6 and Swift Testing).
+- **macOS**: The app targets 14.0 (Sonoma)+; the test targets require 15.5+.
+- **Xcode**: Verified with Xcode 26.2. Earlier toolchains have not been validated for this release.
 - **Hardware**: Any Apple Silicon or Intel Mac capable of running macOS 14+.
 
 ### Getting Started
@@ -55,8 +55,8 @@ CopyShot/
 ### Key Architectural Guidelines
 - **Thread Safety & `@MainActor`**: AppKit UI, window management, `NSPasteboard`, and the `AppDelegate` coordinator must run on the Main Actor.
 - **Background Processing**: Heavy image filtering and Vision OCR requests must execute on background threads (`DispatchQueue.global(qos: .userInitiated)` or Swift Tasks) so the user interface never stutters or drops frames.
-- **Capture Pipeline**: Use `SCScreenshotManager.captureImage` for single-frame capture with background pre-warming, avoiding continuous video streams (`SCStream`) to keep capture latency under ~40ms and prevent lingering recording indicators.
-- **Privacy First**: All OCR and processing must remain 100% on-device. Network requests are limited to Sparkle update checks and user-initiated downloads of the pinned Pix2Text MFR model from Hugging Face. Never send captures, recognized text, or personal files with these requests. Model data stays inside CopyShot's Application Support directory; no executable code is downloaded.
+- **Capture Pipeline**: Use `SCScreenshotManager.captureImage` for single-frame capture with background pre-warming, avoiding continuous video streams (`SCStream`) to avoid an ongoing recording session. Capture latency varies by system and workload.
+- **Privacy First**: Recognition and built-in text transforms run on-device. Update checks and optional model downloads must never include captures, recognized text, or personal files. Explicitly selected web/URL actions may send their payload to the disclosed destination; user-authored scripts run outside the app sandbox with user permissions. Keep those boundaries clear in the UI and docs. Apple manages translation language downloads. Model data stays inside CopyShot's Application Support directory; the model downloader never downloads executable code.
 
 ---
 

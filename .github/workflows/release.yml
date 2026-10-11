@@ -59,11 +59,13 @@ jobs:
           echo "DMG_NAME=CopyShot-${VERSION}.dmg" >> $GITHUB_ENV
           echo "dmg_name=CopyShot-${VERSION}.dmg" >> "$GITHUB_OUTPUT"
 
-      - name: Ad-hoc codesign (.app)
+      - name: Sign and verify Release app
         run: |
           set -euo pipefail
-          codesign --force --deep --sign - "${{ steps.locate_app.outputs.app_path }}"
-          codesign --verify --deep --strict "${{ steps.locate_app.outputs.app_path }}"
+          scripts/sign-release.sh "${{ steps.locate_app.outputs.app_path }}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            scripts/verify-release.sh "${{ steps.locate_app.outputs.app_path }}" "${GITHUB_REF_NAME}"
+          fi
 
       - name: Create DMG
         uses: ./.github/actions/create-dmg

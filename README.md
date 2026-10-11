@@ -17,22 +17,23 @@
 <br/>
 
 <p align="center">
-  <strong>CopyShot is the OCR tool for people who want to understand and control what's happening.</strong><br>
-  Transparent preprocessing, visual inspection, and top-notch configurability.<br>
-  <strong>No cloud. No API keys. No black box.</strong>
-</p>
-
-<p align="center">
   Select → extract → clipboard. One keystroke (⌘⇧C).<br>
   Works seamlessly across every display, resource-friendly, and 100% open source.
 </p>
 
 <br/>
 <div align="center">
-  <img src=".github/screenshot.png" width="500" alt="Screenshot"/><br/>
+  <img src=".github/screenshot.png" width="500" alt="CopyShot 2.0 Capture mode settings"/><br/>
 </div>
 
-<hr>
+<br/>
+
+<p align="center">
+  <strong>CopyShot is the OCR tool for people who want to control what's happening.</strong><br>
+  Offers transparent preprocessing, visual inspection, and top-notch configurability.<br>
+  Local recognition. No API keys. Customizable pipeline.
+</p>
+
 
 ## Main Features
 
@@ -44,16 +45,13 @@
 | **Multi-Monitor** | Seamless across all connected displays with active-monitor HUD placement. |
 | **⌘⇧C (or your own)** | Re-bindable global hotkey via Carbon events (no Accessibility permissions needed). |
 | **Vision OCR Engine** | Accurate & Fast modes, with optional language correction and custom language sets. |
-| **Transparent Preprocessing** | Grayscale conversion (`CIPhotoEffectMono`) and 50% contrast enhancement for optimal text extraction. |
-| **Quick Actions** | Flyout action bars to transform text casing, strip line breaks, open URLs/search, and on-device translation.* |
-| **Capture Inspection** | Opt-in OCR Quick Action showing the original image, monochrome preview, exact OCR input, text bounding boxes, and assembled output. Disabled by default. |
+| **Transparent Preprocessing** | Inspect via `Quick Actions > OCR > Inspect Capture` |
+| **Quick Actions** | Mode-specific flyouts for text transforms, web links/search, table exports, math wrapping, and on-device translation.* Add your own URL templates and shell scripts. See the [usage guide](docs/USAGE.md) and [custom-action guide](docs/QUICK_ACTIONS.md). |
 | **Settings Interface** | Bespoke SwiftUI layout with per-mode configurations and direct-manipulation action reordering. |
-| **Resource Friendly** | Sub-100ms pipeline, asynchronous prewarming, 60s idle model eviction, and minimal CPU/RAM footprint. |
-| **Auto-Update** | Background update checks powered securely by Sparkle. |
+| **Resource Friendly** | Asynchronous prewarming and configurable idle eviction of the formula model. Speed and memory use depend on capture size, mode, and hardware; see [measured benchmarks](docs/TESTING.md). |
+| **Privacy** | Local recognition only. No cloud or API usage. Your screen contents are processed entirely on-device and never leave your Mac. |
 
-*\*Note: On-device translation requires macOS 15.0 (Sequoia) or later. The first time a new language set is used, macOS will prompt you once to download Apple's on-device neural language set directly onto your Mac. Other Quick Actions are fully supported on macOS 14 (Sonoma)+.*
-
-Enable **Inspect Capture** in **Settings → Quick Actions → OCR** before capturing. The action opens a resizable inspection window for that capture, including when no text is found. Select a processing stage to view its image or text, zoom into the captured image, and select numbered text regions to match them to their bounding boxes. If a text Quick Action changes the output, inspection retains the original result and shows the transformed text separately. Opening inspection does not rerun OCR or change the clipboard. Images remain in memory only while the capture HUD or inspection window owns them; inspection creates no image files or history. When the action is disabled, CopyShot uses its existing text-only capture flow.
+*\*Note: On-device translation requires macOS 15+ and a pre-installed language pack from Apple. Other Quick Actions are fully supported on macOS 14 (Sonoma)+.*
 
 ### Multimodal Capture Modes
 
@@ -79,7 +77,7 @@ CopyShot runs as an ultra-lightweight menu bar utility (`LSUIElement`) with a di
 [Global Hotkey (⌘⇧C) or Menu Bar]
          │
          ▼
-[SCScreenshotManager]          ──▶ Retina-scaled single-frame capture (~35ms)
+[SCScreenshotManager]          ──▶ Retina-scaled single-frame capture
          │
          ▼
 [CapturePipeline & Preprocessor]
@@ -101,25 +99,27 @@ CopyShot runs as an ultra-lightweight menu bar utility (`LSUIElement`) with a di
 1. **Hotkey Listening**: Carbon event registration intercepts `⌘⇧C` globally without requiring Accessibility permissions.
 2. **Multi-Monitor Overlay**: Full-screen transparent overlay windows open on all connected displays. Dragging cuts out the selected frame over the target text.
 3. **Radial Mode Selection**: Right-click drag engages cursor locking at the call point, allowing seamless radial switching between OCR, QR, LaTeX, and Table modes.
-4. **Single-Frame Capture**: macOS 14+ `SCScreenshotManager.captureImage` grabs the selected physical display coordinates directly in ~35ms.
-5. **Local Recognition**: Preprocessed with CoreImage, Apple's Vision framework identifies text lines and groups them logically, while specialized engines handle barcode symbologies, table grids, or LaTeX formulas.
-6. **Immediate Feedback**: The recognized text is copied to `NSPasteboard.general` while an interactive HUD with mode-specific Quick Actions appears on the captured display.
+4. **Local Recognition**: Preprocessed with CoreImage, Apple's Vision framework identifies text lines and groups them logically, while specialized engines handle barcode symbologies, table grids, or LaTeX formulas.
+5. **Immediate Feedback**: The recognized text is copied to `NSPasteboard.general` while an interactive HUD with mode-specific Quick Actions appears on the captured display.
 
 ---
 
 ## Privacy
-CopyShot respects your privacy. Capture recognition runs locally using Apple's Vision framework or the installed MFR 1.5 ONNX model. The app **does not access any of your personal files**. Your captured images and extracted text remain entirely on your Mac. Network access is used for update checks and, when you choose Download, fetching the LaTeX model from Hugging Face. The model download sends no captures or recognized text; the hosting service receives standard download-request metadata such as your IP address.
+Recognition runs locally using Apple's Vision framework or the installed MFR 1.5 ONNX model. CopyShot has no capture history, analytics, or cloud recognition service. Recognized text is copied directly to the macOS clipboard.
 
-*Network Note: CopyShot uses its existing outbound-network permission for Sparkle update checks and user-initiated LaTeX model downloads. Recognition remains on-device and works offline once the model is installed.*
+**Actions have their own data destinations.** Web search, Wolfram Alpha, Open URL, and custom URL actions send the selected payload to the destination you choose. Custom shell scripts run through macOS's scripting service **outside CopyShot's sandbox**, with your user permissions; they can access files, use the network, and start other programs. See [Quick Actions](docs/QUICK_ACTIONS.md).
 
+CopyShot keeps an always-on local `diagnostics.log`, capped at 1 MiB, in its Application Support folder. It records technical events, app/macOS versions, capture modes, and safe error codes; it excludes captured text/images, clipboard contents, script output, URLs, and personal file paths. Nothing is uploaded automatically. Open **Settings → About → App Data Folder** to inspect or share it with a bug report. See [troubleshooting](docs/USAGE.md#troubleshooting).
+
+Sparkle contacts the update feed, and choosing Download fetches the optional LaTeX model from Hugging Face. These requests do not include captures or recognized text; the services receive standard request metadata, such as your IP address. Translation runs on-device on macOS 15+, but Apple may ask to download language packs on first use. Apple may collect translation API usage/performance metadata, including the app bundle ID and language pair, but not the original or translated content, as described in [Apple’s TranslationSession documentation](https://developer.apple.com/documentation/translation/translationsession). Recognition works offline after any required model or language packs are installed.
 ---
 
 ## Installation
 
 > **Note:** CopyShot requires **macOS 14 (Sonoma)** or later.
 
-1. **Download the App:**
-   Go to the [Releases](https://github.com/Sayitobar/CopyShot/releases) page and download the latest version of `CopyShot`.
+1. **Download and Install:**
+   Download the `.dmg` from [Releases](https://github.com/Sayitobar/CopyShot/releases), open it, and drag **CopyShot** to **Applications**. Eject the disk image, then open the installed app from Applications. CopyShot appears in the menu bar, not the Dock.
 
 2. **Open the App:**
    - Because CopyShot is an open-source tool and not distributed through the Mac App Store, macOS Gatekeeper will block it when tried to open with a message saying *"CopyShot Not Opened, Apple could not verify CopyShot is free of malware that may harm your Mac or compromise your privacy."*.
@@ -139,8 +139,8 @@ CopyShot respects your privacy. Capture recognition runs locally using Apple's V
 If you'd like to edit, build, test, and run CopyShot yourself on macOS, here's how to get started. See [CONTRIBUTING.md](CONTRIBUTING.md) for full development guidelines.
 
 ### Prerequisites
-- macOS 14+
-- Xcode 16+ (free from the App Store)
+- The app targets macOS 14+; test targets require macOS 15.5+.
+- Verified with Xcode 26.2. Earlier toolchains have not been validated for this release.
 
 ### Steps
 1. **Clone the Repo:**
@@ -191,23 +191,18 @@ Once it's set up, CopyShot should run & appear in your menu bar. If you're going
   <summary>Click to expand</summary>
 
 ### Visual Inspection & Transparency
-- Interactive previews for future preprocessing controls, including binarization.
 - Extend capture inspection to table cells and barcode geometries.
 
 ### OCR & Language Improvements
 - Personal glossary for domain-specific vocabulary and custom corrections.
-- OCR history with instant search & re-copy.
-- Drag-and-drop image files directly into the app for OCR extraction.
 - Advanced preprocessing controls: deskew, denoise, and adaptive threshold binarization.
 
 ### Capture Options
 - Capture an entire window or application frame.
 - Countdown timer for timed captures.
 - Handle scrolling areas for long documents and code blocks.
-- Option to save captures as local images (PNG/JPG) or copy the image directly to the clipboard.
 
-### Usability and Accessibility
-- Onboarding guide for first-time users.
+### Accessibility
 - VoiceOver & other accessibility refinements.
 
 </details>
@@ -215,7 +210,8 @@ Once it's set up, CopyShot should run & appear in your menu bar. If you're going
 ## About the Project
 
 The first version of CopyShot (v1.0.0) was live-coded with Gemini CLI. Every line, refactor, and bug-fix was done with the help of Gemini. This small experiment showed how far AI-assisted software development has come.
+
 Now, the project is maintained with the help of a mix of AI tools and human oversight.
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. Distributed apps also include complete [Sparkle](CopyShot/Resources/Sparkle-LICENSE.txt) and [ONNX Runtime](CopyShot/Resources/ONNXRuntime-LICENSE.txt) licenses and [third-party notices](CopyShot/Resources/ThirdPartyNotices.txt) in `Contents/Resources`.

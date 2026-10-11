@@ -386,19 +386,14 @@ final class QuickActionsTests: XCTestCase {
     }
     
     @MainActor
-    func testTranslationServiceEmptyTextFailsImmediately() {
-        let expectation = expectation(description: "Empty translation returns error")
-        TranslationService.shared.translate(text: "   ", targetLanguageCode: "es") { result in
-            switch result {
-            case .success:
-                XCTFail("Expected failure for whitespace-only text")
-            case .failure(let error as NSError):
-                XCTAssertEqual(error.domain, "CopyShot.Translation")
-                XCTAssertEqual(error.code, -5)
-                expectation.fulfill()
-            }
+    func testTranslationServiceEmptyTextFailsImmediately() async {
+        do {
+            _ = try await TranslationService.shared.translate(text: "   ", targetLanguageCode: "es")
+            XCTFail("Expected failure for whitespace-only text")
+        } catch {
+            XCTAssertEqual((error as NSError).domain, "CopyShot.Translation")
+            XCTAssertEqual((error as NSError).code, -5)
         }
-        waitForExpectations(timeout: 2.0)
     }
     
     func testSubShelfViewCreationWithMainShelfHovered() {

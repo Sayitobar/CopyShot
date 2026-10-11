@@ -6,6 +6,8 @@
 	<string>https://sayitobar.github.io/CopyShot/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>D1sSmGmgBgO/S1FFD6WsnJm8QoqJWIKeHY1ZrzNorEs=</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>CopyShot needs to capture your screen to extract text via OCR.</string>
 </dict>

@@ -9,6 +9,7 @@ import Foundation
 import NaturalLanguage
 import SwiftUI
 import AppKit
+import Combine
 #if canImport(Translation)
 import Translation
 #endif
@@ -23,146 +24,170 @@ struct TranslationResult {
     let targetLanguageName: String
 }
 
-private struct PendingTranslationRequest {
-    let text: String
-    let targetLanguageCode: String
-    let targetLanguageName: String
-    let sourceLanguageName: String
-    let completion: (Result<TranslationResult, Error>) -> Void
+#if canImport(Translation)
+/// Retains invalidation state so two successive requests with the same language pair differ.
+@available(macOS 15.0, *)
+struct TranslationConfigurationSequence {
+    private var previous: TranslationSession.Configuration?
+    mutating func next(source: Locale.Language?, target: Locale.Language) -> TranslationSession.Configuration {
+        var configuration: TranslationSession.Configuration
+        if let previous, previous.source == source, previous.target == target { configuration = previous }
+        else { configuration = TranslationSession.Configuration(source: source, target: target) }
+        configuration.invalidate()
+        previous = configuration
+        return configuration
+    }
 }
 
-#if canImport(Translation)
 @available(macOS 15.0, *)
 @MainActor
-private final class TranslationSessionHost: ObservableObject {
-    @Published var currentConfiguration: TranslationSession.Configuration?
-    private var pendingRequest: PendingTranslationRequest?
+private final class TranslationSessionHost: NSObject, ObservableObject, NSWindowDelegate {
+    struct Request {
+        let id: UUID
+        let text: String
+        let targetLanguageCode: String
+        let targetLanguageName: String
+        let configuration: TranslationSession.Configuration
+    }
+    @Published private var request: Request?
+    private let lifetime = TranslationRequestLifetime()
+    private var configurations = TranslationConfigurationSequence()
+    private var operationTask: Task<Void, Never>?
     private var hostWindow: NSWindow?
-    private var timeoutTimer: Timer?
-    
+    private var appearanceObserver: AnyCancellable?
+
+    private struct HostSizeKey: PreferenceKey {
+        static var defaultValue: CGSize = .zero
+        static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+    }
+
     struct HostView: View {
         @ObservedObject var host: TranslationSessionHost
-        
+        @ObservedObject private var settings = SettingsManager.shared
         var body: some View {
-            Color.clear
-                .frame(width: 1, height: 1)
-                .translationTask(host.currentConfiguration) { session in
-                    await host.handleSession(session)
+            // Capture the request identity along with the configuration, never a mutable latest payload.
+            let request = host.request
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Prepare translation languages", systemImage: "character.bubble")
+                    .font(.headline)
+                Text("Apple may ask to identify the source language or download a language pack for \(request?.targetLanguageName ?? "translation"). Approve its prompt to continue, or cancel this request.")
+                    .font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for macOS…").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Cancel") { host.cancelCurrentRequest() }.keyboardShortcut(.cancelAction)
+                }
+            }
+                .padding(24).frame(width: 360).fixedSize(horizontal: false, vertical: true)
+                .background(GeometryReader { proxy in Color.clear.preference(key: HostSizeKey.self, value: proxy.size) })
+                .onPreferenceChange(HostSizeKey.self) { host.hostWindow?.setContentSize($0) }
+                .preferredColorScheme(settings.appearance.colorScheme)
+                .translationTask(request?.configuration) { session in
+                    guard let request else { return }
+                    await host.handleSession(session, request: request)
                 }
         }
     }
-    
-    init() {
-        let hostView = NSHostingView(rootView: HostView(host: self))
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false
-        )
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+    override init() {
+        super.init()
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "Translation Languages"
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.level = .normal
+        window.collectionBehavior = [.fullScreenAuxiliary]
         window.ignoresMouseEvents = true
-        window.alphaValue = 0.01 // Invisible to user, but kept active and unoccluded by WindowServer
-        window.contentView = hostView
-        window.orderFrontRegardless()
-        self.hostWindow = window
-    }
-    
-    // MARK: - Configuration Constants
-    static let translationTimeoutDuration: TimeInterval = 5.0
-    
-    func translate(
-        text: String,
-        targetLanguageCode: String,
-        targetLanguageName: String,
-        sourceLanguageName: String,
-        detectedSource: String?,
-        completion: @escaping (Result<TranslationResult, Error>) -> Void
-    ) {
-        timeoutTimer?.invalidate()
-        if let previous = self.pendingRequest {
-            let supersededError = NSError(
-                domain: "CopyShot.Translation",
-                code: -4,
-                userInfo: [NSLocalizedDescriptionKey: "Translation request superseded by newer request."]
-            )
-            previous.completion(.failure(supersededError))
-        }
-        
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            let emptyError = NSError(
-                domain: "CopyShot.Translation",
-                code: -5,
-                userInfo: [NSLocalizedDescriptionKey: "No text found to translate."]
-            )
-            completion(.failure(emptyError))
-            return
-        }
-        
-        self.pendingRequest = PendingTranslationRequest(
-            text: text,
-            targetLanguageCode: targetLanguageCode,
-            targetLanguageName: targetLanguageName,
-            sourceLanguageName: sourceLanguageName,
-            completion: completion
-        )
-        
-        // 5-second safety timeout so user is never left without feedback
-        timeoutTimer = Timer.scheduledTimer(withTimeInterval: Self.translationTimeoutDuration, repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                guard let self = self, let request = self.pendingRequest else { return }
-                self.pendingRequest = nil
-                self.timeoutTimer = nil
-                let timeoutError = NSError(
-                    domain: "CopyShot.Translation",
-                    code: -3,
-                    userInfo: [NSLocalizedDescriptionKey: "Translation timed out. Please check that '\(targetLanguageName)' is downloaded in System Settings > General > Language & Region."]
-                )
-                request.completion(.failure(timeoutError))
+        window.alphaValue = 0.01
+        hostWindow = window
+        let content = NSHostingView(rootView: HostView(host: self))
+        window.contentView = content
+        window.setContentSize(content.fittingSize)
+        appearanceObserver = SettingsManager.shared.$appearance.sink { [weak window] appearance in
+            switch appearance {
+            case .system: window?.appearance = nil
+            case .light: window?.appearance = NSAppearance(named: .aqua)
+            case .dark: window?.appearance = NSAppearance(named: .darkAqua)
             }
         }
-        
-        let targetLang = Locale.Language(identifier: targetLanguageCode)
-        let sourceLang: Locale.Language?
-        if let detected = detectedSource, detected.lowercased() != targetLanguageCode.lowercased() {
-            sourceLang = Locale.Language(identifier: detected)
-        } else {
-            sourceLang = nil
-        }
-        
-        var config = TranslationSession.Configuration(source: sourceLang, target: targetLang)
-        config.invalidate()
-        self.currentConfiguration = config
-        self.hostWindow?.orderFrontRegardless()
     }
-    
-    private func handleSession(_ session: TranslationSession) async {
-        timeoutTimer?.invalidate()
-        timeoutTimer = nil
-        
-        guard let request = pendingRequest else { return }
-        self.pendingRequest = nil
-        
-        do {
-            let response = try await session.translate(request.text)
-            let detectedSourceCode = response.sourceLanguage.minimalIdentifier
-            let resolvedSourceName = TranslationService.localizedLanguageName(for: detectedSourceCode)
-            
-            let result = TranslationResult(
-                originalText: request.text,
-                translatedText: response.targetText,
-                sourceLanguageCode: detectedSourceCode,
-                sourceLanguageName: resolvedSourceName,
-                targetLanguageCode: request.targetLanguageCode,
-                targetLanguageName: request.targetLanguageName
-            )
-            request.completion(.success(result))
-        } catch {
-            request.completion(.failure(error))
+
+    func translate(id: UUID, text: String, targetLanguageCode: String,
+                   completion: @escaping (Result<TranslationResult, Error>) -> Void) {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            completion(.failure(NSError(domain: "CopyShot.Translation", code: -5,
+                                        userInfo: [NSLocalizedDescriptionKey: "No text found to translate."])))
+            return
         }
+        lifetime.start(id: id, cancelOperation: { [weak self] in
+            self?.operationTask?.cancel()
+            self?.operationTask = nil
+            self?.request = nil
+            self?.hostWindow?.orderOut(nil)
+        }, completion: completion)
+        let detected = TranslationService.detectLanguageCode(for: text)
+        let source = detected.flatMap { $0.lowercased() == targetLanguageCode.lowercased() ? nil : Locale.Language(identifier: $0) }
+        let configuration = configurations.next(source: source, target: Locale.Language(identifier: targetLanguageCode))
+        request = Request(id: id, text: text, targetLanguageCode: targetLanguageCode,
+                          targetLanguageName: TranslationService.localizedLanguageName(for: targetLanguageCode),
+                          configuration: configuration)
+        hostWindow?.alphaValue = 0.01
+        hostWindow?.ignoresMouseEvents = true
+        hostWindow?.orderFrontRegardless()
+    }
+
+    func cancel(id: UUID) { lifetime.cancel(id: id) }
+
+    private func cancelCurrentRequest() {
+        if let request { cancel(id: request.id) }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        cancelCurrentRequest()
+        return false // Reuse the session host after cancellation.
+    }
+
+    private func showLanguagePreparation() {
+        guard let hostWindow else { return }
+        hostWindow.alphaValue = 1
+        hostWindow.ignoresMouseEvents = false
+        hostWindow.center()
+        NSApp.activate(ignoringOtherApps: true)
+        hostWindow.makeKeyAndOrderFront(nil)
+    }
+
+    private func handleSession(_ session: TranslationSession, request: Request) async {
+        guard lifetime.isCurrent(request.id) else { return }
+        let task = Task { @MainActor [weak self] in
+            do {
+                try Task.checkCancellation()
+                let availability: LanguageAvailability.Status?
+                if let source = request.configuration.source {
+                    availability = await LanguageAvailability().status(from: source, to: request.configuration.target)
+                } else {
+                    availability = try? await LanguageAvailability().status(for: request.text, to: request.configuration.target)
+                }
+                try Task.checkCancellation()
+                if availability != .installed && availability != .unsupported {
+                    self?.showLanguagePreparation()
+                }
+                // translate() handles downloads and language detection. prepareTranslation()
+                // cannot be used when the source is unknown because it has no sample text.
+                let response = try await session.translate(request.text)
+                try Task.checkCancellation()
+                let source = response.sourceLanguage.minimalIdentifier
+                self?.lifetime.finish(id: request.id, result: .success(TranslationResult(
+                    originalText: request.text, translatedText: response.targetText,
+                    sourceLanguageCode: source, sourceLanguageName: TranslationService.localizedLanguageName(for: source),
+                    targetLanguageCode: request.targetLanguageCode, targetLanguageName: request.targetLanguageName)))
+            } catch {
+                self?.lifetime.finish(id: request.id, result: .failure(error))
+            }
+        }
+        operationTask = task
+        // SwiftUI can cancel a session when the configuration changes or its view disappears.
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 }
 #endif
@@ -208,45 +233,25 @@ final class TranslationService: ObservableObject {
     
     // MARK: - Translation Execution
     
-    /// Translates the given text into the target language code.
-    func translate(
-        text: String,
-        targetLanguageCode: String = "en",
-        completion: @escaping (Result<TranslationResult, Error>) -> Void
-    ) {
+    /// Cancellation follows the action task all the way to the active framework operation.
+    func translate(text: String, targetLanguageCode: String = "en") async throws -> TranslationResult {
+        try Task.checkCancellation()
         #if canImport(Translation)
-        if #available(macOS 15.0, *) {
-            guard let host = sessionHost as? TranslationSessionHost else {
-                let error = NSError(
-                    domain: "CopyShot.Translation",
-                    code: -2,
-                    userInfo: [NSLocalizedDescriptionKey: "Translation service failed to initialize."]
-                )
-                completion(.failure(error))
-                return
+        if #available(macOS 15.0, *), let host = sessionHost as? TranslationSessionHost {
+            let id = UUID()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    if Task.isCancelled { continuation.resume(throwing: CancellationError()); return }
+                    host.translate(id: id, text: text, targetLanguageCode: targetLanguageCode) {
+                        continuation.resume(with: $0)
+                    }
+                }
+            } onCancel: {
+                Task { @MainActor in host.cancel(id: id) }
             }
-            
-            let detectedSource = Self.detectLanguageCode(for: text)
-            let sourceName = Self.localizedLanguageName(for: detectedSource)
-            let targetName = Self.localizedLanguageName(for: targetLanguageCode)
-            
-            host.translate(
-                text: text,
-                targetLanguageCode: targetLanguageCode,
-                targetLanguageName: targetName,
-                sourceLanguageName: sourceName,
-                detectedSource: detectedSource,
-                completion: completion
-            )
-            return
         }
         #endif
-        
-        let error = NSError(
-            domain: "CopyShot.Translation",
-            code: -1,
-            userInfo: [NSLocalizedDescriptionKey: "On-device translation requires macOS 15.0 (Sequoia) or later."]
-        )
-        completion(.failure(error))
+        throw NSError(domain: "CopyShot.Translation", code: -1,
+                      userInfo: [NSLocalizedDescriptionKey: "Translation requires macOS 15 or later."])
     }
 }

@@ -184,6 +184,9 @@ private final class ScriptInvocation: @unchecked Sendable {
 
     private func finish(_ result: Result<Data, Error>) {
         guard returnedResult == nil else { return }
+        if case .failure(CustomActionError.timedOut) = result {
+            DiagnosticLog.shared.record(.scriptTimedOut, action: .script)
+        }
         returnedResult = result
         timer?.cancel(); timer = nil
         channels.forEach { $0.close(flags: .stop) }

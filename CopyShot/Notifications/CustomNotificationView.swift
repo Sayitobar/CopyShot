@@ -182,7 +182,7 @@ struct CustomNotificationView: View {
             if isRunningAction {
                 ProgressView().controlSize(.small)
                     .frame(width: 30, height: 30)
-                    .accessibilityLabel("Running script")
+                    .accessibilityLabel(subtitle ?? "Running action")
                     .accessibilityIdentifier("qa-running-script")
             } else if let customIcon = customIcon {
                 ActionIconView(icon: customIcon, size: 24, isHovered: false, accentColor: accentColor)
@@ -247,7 +247,7 @@ struct CustomNotificationView: View {
                     )
                     .shadow(color: Color.black.opacity(0.2), radius: 3, x: 0, y: 1)
             }
-            .help(isRunningAction ? "Stop waiting (the script may continue running)" : "Close notification")
+            .help(isRunningAction ? "Cancel waiting for this action (external scripts may continue running)" : "Close notification")
             .buttonStyle(.plain)
             .debugZone("Close", type: .interactive)
             .offset(x: -6, y: -6)

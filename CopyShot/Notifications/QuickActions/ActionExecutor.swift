@@ -26,11 +26,7 @@ enum ActionExecutionError: LocalizedError {
 @MainActor
 struct ActionExecutor: ActionExecuting {
     var translate: (String, String) async throws -> TranslationResult = { text, language in
-        try await withCheckedThrowingContinuation { continuation in
-            TranslationService.shared.translate(text: text, targetLanguageCode: language) {
-                continuation.resume(with: $0)
-            }
-        }
+        try await TranslationService.shared.translate(text: text, targetLanguageCode: language)
     }
     var scriptRunner: UserScriptRunner = .shared
     var hasHandler: (URL) -> Bool = ActionURLHelper.hasHandler

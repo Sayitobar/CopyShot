@@ -114,6 +114,7 @@ final class FormulaRecognitionService: FormulaRecognizing {
                     self.modelCache.scheduleIdleRelease()
                     done(true)
                 } catch {
+                    DiagnosticLog.shared.record(.prewarmFailed, mode: .latex, error: error)
                     #if DEBUG
                     debugPrint("[MFR 1.5] prewarm failed: \(error.localizedDescription)")
                     #endif

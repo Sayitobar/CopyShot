@@ -207,7 +207,7 @@ struct MFRModelSettingsRow: View {
     @ObservedObject private var manager = MFRModelManager.shared
 
     var body: some View {
-        SettingsRow(label: "MFR Model", tooltip: "Downloads Pix2Text MFR 1.5 once (120 MB). Formula recognition runs locally and works offline after installation.", zIndexValue: 4) {
+        SettingsRow(label: "MFR Model", tooltip: "Downloads Pix2Text MFR 1.5 once (120 MB). Formula recognition runs locally and works offline after installation.", zIndexValue: 8) {
             HStack(spacing: 10) {
                 Text(status).font(.system(size: 11)).foregroundStyle(.secondary)
                 Spacer(minLength: 0)

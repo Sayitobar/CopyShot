@@ -29,6 +29,7 @@ enum BarcodeRecognitionService {
                         _ = request.results
                         done(true)
                     } catch {
+                        DiagnosticLog.shared.record(.prewarmFailed, mode: .qrBarcode, error: error)
                         #if DEBUG
                         debugPrint("[BarcodeRecognitionService] Prewarm error: \(error.localizedDescription)")
                         #endif

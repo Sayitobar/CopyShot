@@ -7,6 +7,7 @@
 
 import Foundation
 import Carbon
+import Combine
 
 // Custom notification names for different hotkey actions
 extension Notification.Name {
@@ -30,63 +31,79 @@ private let hotKeyHandlerCallback: EventHandlerUPP = { (callRef, eventRef, userD
 class HotkeyManager: ObservableObject {
     static let shared = HotkeyManager()
     
-    private var captureHotkeyRef: EventHotKeyRef?
+    @Published var registrationError: String?
+    private var settingsObserver: AnyCancellable?
+    private var eventHandlerRef: EventHandlerRef?
     private var isEventHandlerInstalled = false
+    private let settings: SettingsManager
+    private let registration: HotkeyRegistration
+
+    static func registerSystemHotkey(_ config: HotkeyConfig) throws -> EventHotKeyRef {
+        var reference: EventHotKeyRef?
+        let status = RegisterEventHotKey(UInt32(config.keyCode), config.modifierFlags,
+                                        EventHotKeyID(signature: "htk1".fourCharKode, id: 1),
+                                        GetApplicationEventTarget(), UInt32(kEventHotKeyExclusive), &reference)
+        guard status == noErr, let reference else { throw HotkeyRegistrationError.unavailable(status) }
+        return reference
+    }
     
-    private init() {
-        // Listen for settings changes
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(hotkeySettingsChanged),
-            name: NSNotification.Name("HotkeySettingsChanged"),
-            object: nil
-        )
+    init(settings: SettingsManager = .shared, registration: HotkeyRegistration? = nil) {
+        self.settings = settings
+        self.registration = registration ?? HotkeyRegistration(register: Self.registerSystemHotkey, unregister: { UnregisterEventHotKey($0) })
+        settingsObserver = settings.$captureHotkey.dropFirst().sink { [weak self] config in
+            // Published emits before assignment; use the emitted candidate, including resets.
+            self?.register(config)
+        }
     }
     
     deinit {
-        unregisterAllHotkeys()
-        NotificationCenter.default.removeObserver(self)
+        if let eventHandlerRef { RemoveEventHandler(eventHandlerRef) }
     }
     
     func registerHotkeys() {
-        let settings = SettingsManager.shared
-        
-        // Unregister existing hotkeys first
-        unregisterAllHotkeys()
-        
-        // Install event handler if not already installed
-        if !isEventHandlerInstalled {
-            installEventHandler()
+        register(settings.captureHotkey)
+    }
+
+    /// Call before persisting a recorded candidate so registration failure is reversible.
+    func setCaptureHotkey(_ config: HotkeyConfig) throws {
+        do {
+            if !isEventHandlerInstalled { try installEventHandler() }
+            try registration.replace(with: config)
+        } catch {
+            logRegistrationFailure(error)
+            throw error
         }
-        
-        // Register capture hotkey
-        registerHotkey(
-            config: settings.captureHotkey,
-            id: 1,
-            hotkeyRef: &captureHotkeyRef
-        )
+        registrationError = nil
+        settings.captureHotkey = config
+    }
+
+    private func register(_ config: HotkeyConfig) {
+        do {
+            if !isEventHandlerInstalled { try installEventHandler() }
+            try registration.replace(with: config)
+            registrationError = nil
+        } catch {
+            logRegistrationFailure(error)
+            registrationError = error.localizedDescription
+            // A reset may have written the candidate already. Restore the registered value.
+            if let active = registration.activeConfig, config != active {
+                let message = error.localizedDescription
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.settings.captureHotkey == config else { return }
+                    self.settings.captureHotkey = active
+                    self.registrationError = message
+                }
+            }
+        }
+    }
+
+    private func logRegistrationFailure(_ error: Error) {
+        if case HotkeyRegistrationError.unavailable(let status) = error {
+            DiagnosticLog.shared.record(.hotkeyRegistrationFailed, code: Int(status))
+        } else { DiagnosticLog.shared.record(.hotkeyRegistrationFailed, error: error) }
     }
     
-    private func registerHotkey(config: HotkeyConfig, id: UInt32, hotkeyRef: inout EventHotKeyRef?) {
-        let hotKeyID = EventHotKeyID(signature: "htk1".fourCharKode, id: id)
-        
-        let status = RegisterEventHotKey(
-            UInt32(config.keyCode),
-            config.modifierFlags,
-            hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &hotkeyRef
-        )
-        
-        if status != noErr {
-            debugPrint("Error registering hotkey \(config.displayString): \(status)")
-        } else {
-            debugPrint("Successfully registered hotkey: \(config.displayString)")
-        }
-    }
-    
-    private func installEventHandler() {
+    private func installEventHandler() throws {
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: OSType(kEventHotKeyPressed)
@@ -100,14 +117,14 @@ class HotkeyManager: ObservableObject {
             1,
             &eventType,
             selfPtr,
-            nil
+            &eventHandlerRef
         )
         
         if status == noErr {
             isEventHandlerInstalled = true
             print("Event handler installed successfully")
         } else {
-            print("Error installing event handler: \(status)")
+            throw HotkeyRegistrationError.unavailable(status)
         }
     }
     
@@ -126,6 +143,7 @@ class HotkeyManager: ObservableObject {
         )
         
         guard status == noErr else {
+            DiagnosticLog.shared.record(.hotkeyEventFailed, code: Int(status))
             print("Error getting hotkey ID: \(status)")
             return
         }
@@ -140,17 +158,6 @@ class HotkeyManager: ObservableObject {
         }
     }
     
-    private func unregisterAllHotkeys() {
-        if let captureRef = captureHotkeyRef {
-            UnregisterEventHotKey(captureRef)
-            captureHotkeyRef = nil
-        }
-    }
-    
-    @objc private func hotkeySettingsChanged() {
-        // Re-register hotkeys when settings change
-        registerHotkeys()
-    }
 }
 
 extension String {

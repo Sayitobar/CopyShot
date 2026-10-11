@@ -21,7 +21,7 @@ class OCRService {
         init(settings: SettingsManager = .shared) {
             level = settings.recognitionLevel.rawValue
             usesLanguageCorrection = settings.usesLanguageCorrection
-            languages = settings.recognitionLanguages
+            languages = settings.effectiveRecognitionLanguages
         }
 
         func apply(to request: VNRecognizeTextRequest) {
@@ -80,6 +80,7 @@ class OCRService {
                         _ = request.results
                         done(true)
                     } catch {
+                        DiagnosticLog.shared.record(.prewarmFailed, mode: .standardOCR, error: error)
                         #if DEBUG
                         debugPrint("[OCRService] Prewarm error: \(error.localizedDescription)")
                         #endif

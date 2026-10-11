@@ -3,13 +3,66 @@ import XCTest
 
 final class CustomActionContractTests: XCTestCase {
     func testStarterScriptsAreBundledAndExecutable() throws {
-        for name in ["strip_line_numbers", "remove_blank_lines"] {
+        for name in ["strip_line_numbers", "remove_blank_lines", "save_capture_to_file"] {
             let url = try XCTUnwrap(Bundle.main.url(forResource: name, withExtension: "sh", subdirectory: "StarterActions")
                                     ?? Bundle.main.url(forResource: name, withExtension: "sh"))
             XCTAssertTrue(FileManager.default.isExecutableFile(atPath: url.path))
             let parsed = try ScriptAction.parse(source: String(contentsOf: url, encoding: .utf8), url: url)
             XCTAssertTrue(parsed.metadata.id.hasPrefix("custom.script.copyshot."))
         }
+    }
+
+    func testSaveCaptureStarterPreservesExactTextInUniquePrivateFiles() throws {
+        let script = try XCTUnwrap(Bundle.main.url(forResource: "save_capture_to_file", withExtension: "sh", subdirectory: "StarterActions")
+                                  ?? Bundle.main.url(forResource: "save_capture_to_file", withExtension: "sh"))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Capture exports \(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixtures = ["Hello", "日本語 café\nsecond line\n\n", "", "$(touch unexpected) `exit 1` $HOME & 'quoted'", "one\ttwo\r\nthree\tfour"]
+        var paths: Set<URL> = []
+        for text in fixtures {
+            let result = try runSaveCapture(script: script, directory: directory, text: text)
+            XCTAssertEqual(result.status, 0, result.error)
+            XCTAssertTrue(result.output.isEmpty, "Completion-only scripts must not emit clipboard text.")
+            let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            let fresh = try XCTUnwrap(Set(files).subtracting(paths).first)
+            XCTAssertEqual(files.count, paths.count + 1, "Each run creates one new file without replacing earlier captures.")
+            XCTAssertEqual(fresh.pathExtension, "txt")
+            XCTAssertEqual(try Data(contentsOf: fresh), Data(text.utf8))
+            let permissions = try FileManager.default.attributesOfItem(atPath: fresh.path)[.posixPermissions] as? NSNumber
+            XCTAssertEqual(permissions?.intValue, 0o600)
+            paths.insert(fresh)
+        }
+    }
+
+    func testSaveCaptureStarterReportsUnusableExportDirectory() throws {
+        let script = try XCTUnwrap(Bundle.main.url(forResource: "save_capture_to_file", withExtension: "sh", subdirectory: "StarterActions")
+                                  ?? Bundle.main.url(forResource: "save_capture_to_file", withExtension: "sh"))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("existing file".utf8).write(to: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let result = try runSaveCapture(script: script, directory: directory, text: "New capture")
+        XCTAssertNotEqual(result.status, 0)
+        XCTAssertFalse(result.error.isEmpty)
+        XCTAssertTrue(result.output.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: directory), Data("existing file".utf8))
+    }
+
+    private func runSaveCapture(script: URL, directory: URL, text: String) throws -> (status: Int32, output: Data, error: String) {
+        let process = Process()
+        process.executableURL = script
+        var environment = ProcessInfo.processInfo.environment
+        environment["COPYSHOT_EXPORT_DIRECTORY"] = directory.path
+        process.environment = environment
+        let input = Pipe(), output = Pipe(), error = Pipe()
+        process.standardInput = input
+        process.standardOutput = output
+        process.standardError = error
+        try process.run()
+        try input.fileHandleForWriting.write(contentsOf: Data(text.utf8))
+        try input.fileHandleForWriting.close()
+        process.waitUntilExit()
+        return (process.terminationStatus, output.fileHandleForReading.readDataToEndOfFile(),
+                String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
     }
     func testPlainScriptDefaultsAndHeadersStopAtFirstCommand() throws {
         let url = URL(fileURLWithPath: "/tmp/strip_line_numbers.sh")

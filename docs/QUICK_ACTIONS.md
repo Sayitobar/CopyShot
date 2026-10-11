@@ -32,9 +32,19 @@ Shelves use the actual SwiftUI content's `NSHostingView.fittingSize`, clamp the 
 
 In Settings → Quick Actions, choose **Open Actions Folder**. Copy an executable, UTF-8 `.sh` file directly into that folder using Finder, Terminal, or an external agent you have authorized to install it. CopyShot reads this directory but does not write scripts into it. The path is resolved with `FileManager.applicationScriptsDirectory`, rather than hard-coded for a particular distribution.
 
-**Starter Scripts** reveals the bundled `strip_line_numbers.sh` and `remove_blank_lines.sh` examples. Copy them into the actions folder, then enable them in the OCR list. They use macOS's `/bin/sh` and `/usr/bin/sed`; no additional runtime is required. These are line-oriented examples: use Strip Line Numbers on text known to contain line numbers, since a leading year followed by a space is indistinguishable from a line number.
+**Starter Scripts** reveals three bundled examples. Copy the scripts you want into the actions folder, then enable them in each applicable mode. They use built-in macOS tools and require no additional runtime.
 
-If a script is not executable, run `chmod +x` followed by its quoted path in Terminal. Finder copying preserves the examples' executable permissions. Scripts must be regular files, not symlinks; subfolders are not scanned. Added/edited files reload automatically after a 200 ms debounce, including edits that replace the file atomically. App activation rescans as a recovery path. No script runs during discovery.
+| Script | Modes | Output and capability |
+|---|---|---|
+| `strip_line_numbers.sh` | OCR | `copy`: remove leading line numbers from text known to contain numbered lines. A leading year followed by a space is indistinguishable from a line number. |
+| `remove_blank_lines.sh` | OCR | `copy`: remove empty and whitespace-only lines. |
+| `save_capture_to_file.sh` | OCR, QR/barcodes, LaTeX, Table | `none`: save the exact current text to a unique private `.txt` file under **Documents → CopyShot Captures**, without changing the clipboard. Preserves Unicode, empty input, tabs, and trailing newlines. |
+
+Save Capture to File writes text, not the screenshot or structured recognition data. Each invocation creates a new file with owner-only read/write permissions. It uses `/bin/sh`, `mkdir`, `date`, `uuidgen`, and `cat`. To choose another destination, edit the default `capture_directory` assignment; external callers can also set `COPYSHOT_EXPORT_DIRECTORY`, useful for isolated fixture tests.
+
+These three examples cover copied text and completion with a file side effect. To demonstrate navigation, use **Add URL Action** with `https://example.com/search?q={text}`; script `open-url` output is also supported as described below.
+
+If a script is not executable, run `chmod +x` followed by its quoted path in Terminal. Finder copying preserves the examples' executable permissions. Scripts must be regular files, not symlinks; subfolders are not scanned. Added/edited files reload automatically after a short debounce, including edits that replace the file atomically. App activation rescans as a recovery path. No script runs during discovery.
 
 A plain script defaults to its filename-derived title and identity, the terminal icon, Standard OCR, copied stdout, and a 30-second wait. Optional metadata appears in leading comments, before the first command:
 
@@ -61,7 +71,7 @@ Supported headers:
 | `output` | `copy`, `open-url`, or `none`. |
 | `timeout` | Positive, finite wait duration in seconds. |
 
-Duplicate recognized headers, invalid values, duplicate action IDs, and non-executable or unsupported files appear in **Custom Actions** with diagnostics. Unknown header keys are ignored for forward compatibility.
+Duplicate recognized headers, invalid values, duplicate action IDs, and non-executable or unsupported files appear in **Custom Actions** with diagnostics. Every otherwise valid script sharing a duplicate ID is excluded; there is no winning first file. Unknown header keys are ignored for forward compatibility.
 
 ### Input, outputs, and execution
 
@@ -70,6 +80,8 @@ The full current text is UTF-8 on **stdin**, with no added newline and no duplic
 - `copy`: exact UTF-8 stdout replaces the current text and clipboard, including empty output and trailing newlines.
 - `open-url`: stdout must contain one absolute HTTP(S) or registered application URL. Surrounding whitespace is trimmed; the clipboard does not change.
 - `none`: stdout is ignored and a completion HUD appears without changing the clipboard.
+
+A script using `open-url` must construct its complete URL, percent-encoding captured text for its URL component; CopyShot validates stdout but does not expand `{text}` tokens there. Internal whitespace/newlines are rejected, HTTP(S) needs a host, and application schemes need an installed handler. File, JavaScript, and data URLs are rejected. Keep progress messages on stderr so stdout contains only the URL.
 
 Use stderr for diagnostics and exit nonzero for failure. Success does not treat stderr as an error. CopyShot retains at most 64 KiB of stderr, shows a concise failure message, and limits stdin and copied/URL stdout to 4 MiB each. Stdout/stderr are consumed concurrently while input is sent, so large streams do not deadlock.
 
@@ -94,7 +106,7 @@ The **Custom Actions** list sorts actions alphabetically, independently of each 
 
 The borderless trash button asks for confirmation. Removing a URL action deletes its definition; removing a script moves its file to Trash and refreshes the mode lists and shelf. When the sandbox needs permission, select the actions folder in the native **Allow Removal** chooser. Cancelling leaves the script installed. Finder's Put Back restores the file, and its stable identity restores the previous mode preferences.
 
-**General → Reset Settings** opens a sheet with independent General, Capture, Notifications, and Quick Actions checkboxes. Nothing is selected initially. **Reset Selected** restores only the selected pages; Cancel changes nothing. About has no resettable preferences. Resetting Quick Actions retains authored scripts and URL definitions, while restoring defaults and disabling custom actions.
+**General → Reset Settings** opens a separate window with independent General, Capture, Notifications, and Quick Actions checkboxes. Nothing is selected initially. **Reset Selected** restores only the selected pages; Cancel changes nothing. About has no resettable preferences. Resetting Quick Actions retains authored scripts and URL definitions, while restoring defaults and disabling custom actions.
 
 ## Agent skill and future features
 
@@ -108,4 +120,4 @@ See [TESTING.md](TESTING.md) for automated checks and manual capture/HUD verific
 
 - Computed OCR `actionOrder` and `disabledActionIds` accessors retain source compatibility for existing callers. Only mode entries are serialized. Removing these accessors later requires updating those callers.
 - Shelf geometry uses actual `NSHostingView.fittingSize`; Settings baseline and drag measurements retain PreferenceKeys. Changes to shelf styling should be checked against actual window geometry because AppKit supplies the shelf measurement.
-- The repository's local, ignored `UI_ARCHITECTURE.md` remains the bespoke UI policy. This tracked document records the new architecture so it travels with the implementation; policy and feature documentation must remain consistent.
+- The repository's local, ignored `docs/UI_ARCHITECTURE.md` remains the bespoke UI policy. This tracked document records the new architecture so it travels with the implementation; policy and feature documentation must remain consistent.

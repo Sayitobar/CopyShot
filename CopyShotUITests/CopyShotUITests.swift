@@ -10,6 +10,156 @@ import AppKit
 
 final class CopyShotUITests: XCTestCase {
     @MainActor
+    func testWelcomeMenuEntryRequiresDebugZones() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        app.launch()
+        let settings = app.windows["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        let status = app.statusItems["MenuBarIcon"]
+        status.click()
+        XCTAssertEqual(app.menuItems.matching(NSPredicate(format: "title BEGINSWITH %@", "Welcome to CopyShot")).count, 0)
+        app.typeKey(.escape, modifierFlags: [])
+        settings.click()
+        app.typeKey("d", modifierFlags: [.command, .shift, .option])
+        status.click()
+        let welcome = app.menuItems["Welcome to CopyShot… (DEBUG)"]
+        XCTAssertTrue(welcome.waitForExistence(timeout: 3))
+        welcome.click()
+        XCTAssertTrue(app.windows["Welcome to CopyShot"].waitForExistence(timeout: 3))
+        app.windows["Welcome to CopyShot"].buttons["welcome-settings"].click()
+        app.typeKey("d", modifierFlags: [.command, .shift, .option])
+        status.click()
+        XCTAssertEqual(app.menuItems.matching(NSPredicate(format: "title BEGINSWITH %@", "Welcome to CopyShot")).count, 0)
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
+    @MainActor
+    func testFastOCRExplainsSavedInactiveLanguages() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        app.launch()
+        let settings = app.windows["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.buttons["settings-tab-Capture"].click()
+        settings.buttons["settings-add-language-picker"].click()
+        let japanese = Locale.current.localizedString(forIdentifier: "ja-JP") ?? "ja-JP"
+        app.menuItems[japanese].click()
+        settings.radioButtons["Fast"].click()
+        let explanation = settings.staticTexts["settings-language-level-note"]
+        XCTAssertTrue(explanation.waitForExistence(timeout: 3))
+        XCTAssertTrue((explanation.value as? String ?? explanation.label).contains(japanese))
+        XCTAssertTrue(settings.frame.contains(explanation.frame))
+        let screenshot = XCTAttachment(screenshot: settings.screenshot())
+        screenshot.name = "Fast OCR Inactive Language Explanation"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        settings.radioButtons["Accurate"].click()
+        XCTAssertFalse(explanation.exists)
+        XCTAssertTrue(settings.staticTexts[japanese].exists)
+    }
+
+    @MainActor
+    func testWelcomePanelExplainsCaptureAndDataBoundariesAndCanOpenSettings() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings", "--ui-testing-welcome"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        for appearance in ["Light", "Dark"] {
+            app.launchEnvironment["COPYSHOT_UI_TEST_APPEARANCE"] = appearance
+            app.launch()
+            let welcome = app.windows["Welcome to CopyShot"]
+            XCTAssertTrue(welcome.waitForExistence(timeout: 10))
+            XCTAssertTrue(welcome.buttons["welcome-start-capture"].exists)
+            XCTAssertTrue(welcome.staticTexts["Capture and paste"].exists)
+            XCTAssertTrue(welcome.staticTexts["Choose a capture mode"].exists)
+            XCTAssertTrue(welcome.staticTexts["Quick Actions"].exists)
+            XCTAssertTrue(welcome.staticTexts["Inspect the result"].exists)
+            XCTAssertTrue(welcome.staticTexts["welcome-data-boundaries"].exists)
+            let headings = ["Capture and paste", "Choose a capture mode", "Quick Actions", "Inspect the result"]
+                .map { welcome.staticTexts[$0] }
+            for (left, right) in zip(headings, headings.dropFirst()) {
+                XCTAssertLessThan(left.frame.maxX, right.frame.minX, "Welcome steps should read left to right in separate columns.")
+                XCTAssertEqual(left.frame.minY, right.frame.minY, accuracy: 1)
+            }
+            let screenshot = XCTAttachment(screenshot: welcome.screenshot())
+            screenshot.name = "Welcome Panel \(appearance)"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+            welcome.buttons["welcome-settings"].click()
+            XCTAssertFalse(welcome.exists)
+            XCTAssertTrue(app.windows["Settings"].waitForExistence(timeout: 3))
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testCaptureHeightFollowsSelectedModeAndModelSetupComesFirst() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        for appearance in ["Light", "Dark"] {
+            app.launchEnvironment["COPYSHOT_UI_TEST_APPEARANCE"] = appearance
+            app.launch()
+            let window = app.windows["Settings"]
+            XCTAssertTrue(window.waitForExistence(timeout: 10))
+            window.buttons["settings-tab-Capture"].click()
+            let ocrHeight = settledWindowHeight(window)
+            let top = window.frame.minY
+            window.buttons["capture-mode-qrBarcode"].click()
+            let barcodeHeight = settledWindowHeight(window)
+            XCTAssertNotEqual(barcodeHeight, ocrHeight, accuracy: 1)
+            XCTAssertEqual(window.frame.minY, top, accuracy: 1)
+            window.buttons["capture-mode-latex"].click()
+            let latexHeight = settledWindowHeight(window)
+            XCTAssertNotEqual(latexHeight, barcodeHeight, accuracy: 1)
+            XCTAssertLessThan(window.staticTexts["MFR Model"].frame.maxY, window.staticTexts["Prettify Syntax"].frame.minY)
+            XCTAssertTrue(window.frame.contains(window.buttons["settings-mfr-model"].frame))
+            let latexScreenshot = XCTAttachment(screenshot: window.screenshot())
+            latexScreenshot.name = "LaTeX Model First \(appearance)"
+            latexScreenshot.lifetime = .keepAlways
+            add(latexScreenshot)
+            window.buttons["capture-mode-standardOCR"].click()
+            XCTAssertEqual(settledWindowHeight(window), ocrHeight, accuracy: 1)
+            let screenshot = XCTAttachment(screenshot: window.screenshot())
+            screenshot.name = "Capture Selected Mode Height \(appearance)"
+            screenshot.lifetime = .keepAlways
+            add(screenshot)
+            app.terminate()
+        }
+    }
+
+    @MainActor
+    func testShortcutRecordingCancelsOnEscapeAndTabChange() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        app.launch()
+        let settings = app.windows["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.buttons["settings-tab-Capture"].click()
+        let shortcut = settings.buttons["settings-capture-shortcut"]
+        XCTAssertTrue(shortcut.waitForExistence(timeout: 3))
+        shortcut.click()
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(shortcut.label.contains("⌘⇧C"), "Escape must cancel recording and retain the working shortcut.")
+        shortcut.click()
+        app.typeKey("k", modifierFlags: [.control, .option, .shift])
+        XCTAssertTrue(shortcut.label.contains("K"), "A valid candidate must register and be displayed.")
+        shortcut.click()
+        settings.buttons["settings-tab-Notifications"].click()
+        let preview = settings.textFields["settings-notifications-preview-limit"]
+        preview.click()
+        preview.typeKey("a", modifierFlags: .command)
+        preview.typeText("12")
+        preview.typeKey(.return, modifierFlags: [])
+        XCTAssertEqual(preview.value as? String, "12", "A recorder on another tab must not consume typing.")
+        settings.buttons["settings-tab-Capture"].click()
+        XCTAssertTrue(shortcut.exists)
+    }
+
+    @MainActor
     func testMissingMFRModelOpensNativeDownloaderFromLaTeXSettings() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-show-settings"]

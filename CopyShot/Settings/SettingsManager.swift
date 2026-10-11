@@ -59,6 +59,7 @@ enum SettingsKeys {
     static let lastCaptureTimestamp = "lastCaptureTimestamp"
     static let mfrUnloadPolicy = "mfrUnloadPolicy"
     static let prewarmRecognition = "prewarmRecognition"
+    static let hasSeenWelcomeV2 = "hasSeenWelcomeV2"
 }
 
 // Using an enum for the recognition level makes our code safer and clearer.
@@ -125,6 +126,10 @@ class SettingsManager: ObservableObject {
         return SettingsManager()
     }()
     private let defaults: UserDefaults
+    var hasSeenWelcome: Bool {
+        get { defaults.bool(forKey: SettingsKeys.hasSeenWelcomeV2) }
+        set { defaults.set(newValue, forKey: SettingsKeys.hasSeenWelcomeV2) }
+    }
     let debugOverlay = DebugOverlayState()
     let presentationSettings = PresentationSettings()
     
@@ -185,6 +190,7 @@ class SettingsManager: ObservableObject {
                         try SMAppService.mainApp.unregister()
                     }
                 } catch {
+                    DiagnosticLog.shared.record(.launchAtLoginFailed, error: error)
                     debugPrint("Failed to update launch at login status: \(error)")
                     DispatchQueue.main.async {
                         self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
@@ -425,11 +431,25 @@ class SettingsManager: ObservableObject {
     // Helper property to get available languages from Vision
     var supportedLanguages: [String] {
         let request = VNRecognizeTextRequest()
+        request.recognitionLevel = recognitionLevel == .accurate ? .accurate : .fast
         do {
             return try request.supportedRecognitionLanguages()
         } catch {
             return ["en-US"] // Fallback
         }
+    }
+
+    /// Keep saved choices when switching levels, but submit only supported languages to Vision.
+    var effectiveRecognitionLanguages: [String] {
+        let supported = supportedLanguages
+        let selected = recognitionLanguages.filter { supported.contains($0) }
+        if !selected.isEmpty { return selected }
+        return [supported.contains("en-US") ? "en-US" : (supported.first ?? "en-US")]
+    }
+
+    var inactiveRecognitionLanguages: [String] {
+        let supported = supportedLanguages
+        return recognitionLanguages.filter { !supported.contains($0) }
     }
     
     // MARK: - Hotkey Management

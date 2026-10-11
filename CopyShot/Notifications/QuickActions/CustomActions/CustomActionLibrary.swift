@@ -52,7 +52,10 @@ final class CustomActionLibrary: ObservableObject {
                 let stored = try JSONDecoder().decode(Storage.self, from: data)
                 guard stored.version == 1 else { throw CustomActionError.invalidMetadata("The saved URL actions use a newer format.") }
                 urlActions = stored.actions
-            } catch { storageDiagnostic = "Could not load saved URL actions: \(error.localizedDescription)" }
+            } catch {
+                DiagnosticLog.shared.record(.customCatalogInvalid, error: error)
+                storageDiagnostic = "Could not load saved URL actions: \(error.localizedDescription)"
+            }
         }
         publishSnapshot()
     }
@@ -94,6 +97,9 @@ final class CustomActionLibrary: ObservableObject {
         directory = result.0
         scripts = result.1.actions
         scriptDiagnostics = result.1.diagnostics
+        if !scriptDiagnostics.isEmpty {
+            DiagnosticLog.shared.record(.customCatalogInvalid, count: scriptDiagnostics.count)
+        }
         publishSnapshot()
         if let directory { watcher?.watch(directory: directory, files: result.1.files) }
     }

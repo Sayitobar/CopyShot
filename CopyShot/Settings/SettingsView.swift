@@ -5,6 +5,7 @@
 
 import SwiftUI
 import Sparkle
+import Carbon
 
 enum SettingsTab: String, CaseIterable {
     case general = "General"
@@ -308,6 +309,7 @@ struct SettingsView: View {
     @State private var liveContentHeight: CGFloat = 0
     @State private var viewportHeight: CGFloat = 0
     @State private var selectedQAMode: CaptureMode = .standardOCR
+    @State private var selectedCaptureMode: CaptureMode = .standardOCR
     @Environment(\.colorScheme) var colorScheme
     
     // Toggle content transitions ON/OFF (Slide under tab bar)
@@ -318,7 +320,7 @@ struct SettingsView: View {
     private func tabContentView(for tab: SettingsTab) -> some View {
         switch tab {
         case .general: GeneralSettingsView()
-        case .capture: CaptureSettingsView()
+        case .capture: CaptureSettingsView(selectedMode: $selectedCaptureMode)
         case .notifications: NotificationsSettingsView()
         case .quickActions: QuickActionsSettingsView(selectedMode: $selectedQAMode)
         case .about: AboutSettingsView(updaterViewModel: updaterViewModel)
@@ -477,7 +479,7 @@ struct SettingsView: View {
         if layoutTab == .quickActions {
             QuickActionsSettingsBaselineView()
         } else if layoutTab == .capture {
-            CaptureSettingsBaselineView()
+            CaptureSettingsView(selectedMode: $selectedCaptureMode, isBaseline: true)
         } else {
             tabContentView(for: layoutTab)
         }
@@ -752,25 +754,13 @@ struct ModelUnloadSlider: View {
     }
 }
 
-// MARK: - Capture Settings Baseline Probe View
-struct CaptureSettingsBaselineView: View {
-    var body: some View {
-        ZStack(alignment: .top) {
-            ForEach(CaptureModeDescriptor.available) { descriptor in
-                CaptureSettingsView(baselineMode: descriptor.id)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-}
-
 // MARK: - Capture Settings
 struct CaptureSettingsView: View {
     @EnvironmentObject var settings: SettingsManager
-    var baselineMode: CaptureMode? = nil
-    @State private var selectedMode: CaptureMode = .standardOCR
+    @Binding var selectedMode: CaptureMode
+    var isBaseline = false
     
-    private var activeMode: CaptureMode { baselineMode ?? selectedMode }
+    private var activeMode: CaptureMode { selectedMode }
     
     private var availableLanguages: [String] {
         settings.supportedLanguages.filter { !settings.recognitionLanguages.contains($0) }
@@ -900,12 +890,11 @@ struct CaptureSettingsView: View {
             }
         }
         .onAppear {
+            guard !isBaseline else { return }
             if settings.recognitionLanguages.isEmpty {
                 settings.recognitionLanguages = ["en-US"]
             }
-            if baselineMode == nil {
-                selectedMode = settings.defaultCaptureMode
-            }
+            selectedMode = settings.defaultCaptureMode
         }
     }
     
@@ -951,6 +940,7 @@ struct CaptureSettingsView: View {
                                 ForEach(Array(settings.recognitionLanguages.enumerated()), id: \.element) { index, language in
                                     LanguageRow(
                                         language: language,
+                                        isSupported: settings.supportedLanguages.contains(language),
                                         canRemove: settings.recognitionLanguages.count > 1,
                                         isLast: index == settings.recognitionLanguages.count - 1
                                     ) {
@@ -968,6 +958,15 @@ struct CaptureSettingsView: View {
                                 .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
                         )
                     }
+
+                    if !settings.inactiveRecognitionLanguages.isEmpty {
+                        Text("Unavailable in \(settings.recognitionLevel.description): \(settings.inactiveRecognitionLanguages.map { Locale.current.localizedString(forIdentifier: $0) ?? $0 }.joined(separator: ", ")). Saved for other levels. Active: \(settings.effectiveRecognitionLanguages.map { Locale.current.localizedString(forIdentifier: $0) ?? $0 }.joined(separator: ", ")).")
+                            .accessibilityIdentifier("settings-language-level-note")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: 200, alignment: .leading)
+                    }
                 }
             }
         }
@@ -975,6 +974,8 @@ struct CaptureSettingsView: View {
     
     private var latexSettingsView: some View {
         VStack(spacing: 20) {
+            MFRModelSettingsRow()
+
             SettingsRow(label: "Prettify Syntax", tooltip: "Compact redundant spaces around braces, operators, and subscripts in LaTeX output.", zIndexValue: 7) {
                 Toggle("", isOn: $settings.prettifyLatex)
                     .toggleStyle(.switch)
@@ -990,8 +991,6 @@ struct CaptureSettingsView: View {
             SettingsRow(label: "Model Memory", tooltip: "Determines how long the Pix2Text MFR 1.5 model remains in RAM after capture.\nImmediately: Frees memory right after every capture.\nNever: Keeps model resident for instantaneous subsequent inferences.", zIndexValue: 5) {
                 ModelUnloadSlider(policy: $settings.mfrUnloadPolicy)
             }
-
-            MFRModelSettingsRow()
         }
     }
     
@@ -1125,8 +1124,7 @@ struct AboutSettingsView: View {
                 }
                 
                 SettingsUtilityButton(title: "App Data Folder", icon: "folder") {
-                    let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-                    let appDir = appSupportURL.appendingPathComponent(Bundle.main.bundleIdentifier ?? "CopyShot")
+                    guard let appDir = DiagnosticLog.applicationDataDirectory else { return }
                     try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: appDir.path)
                 }
@@ -1274,6 +1272,8 @@ struct HotkeyField: View {
     let placeholder: String
     @State private var isCapturing = false
     @State private var eventMonitor: Any?
+    @ObservedObject private var manager = HotkeyManager.shared
+    @State private var recordingError: String?
     @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
@@ -1317,11 +1317,29 @@ struct HotkeyField: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("settings-capture-shortcut")
+        .help("Click to record a shortcut. Use Command, Control, or Option with a key; Escape cancels.")
+        .onDisappear(perform: stopCapturing)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in stopCapturing() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in stopCapturing() }
+        .alert("Capture Shortcut", isPresented: Binding(
+            get: { recordingError != nil || manager.registrationError != nil },
+            set: { if !$0 { recordingError = nil; manager.registrationError = nil } }
+        )) {
+            Button("OK") { recordingError = nil; manager.registrationError = nil }
+        } message: {
+            Text(recordingError ?? manager.registrationError ?? "")
+        }
     }
     
     private func startCapturing() {
+        stopCapturing()
+        guard let recordingWindow = NSApp.keyWindow else { return }
         isCapturing = true
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak recordingWindow] event in
+            guard isCapturing, let recordingWindow, event.window === recordingWindow,
+                  recordingWindow.isKeyWindow else { return event }
+            if event.keyCode == UInt16(kVK_Escape) { stopCapturing(); return nil }
             updateHotkey(with: event)
             return nil
         }
@@ -1345,9 +1363,11 @@ struct HotkeyField: View {
             displayString: SettingsManager.displayString(for: event.keyCode, modifierFlags: carbonModifiers)
         )
         
-        if !SettingsManager.shared.isHotkeyInUse(newHotkey) {
+        do {
+            try manager.setCaptureHotkey(newHotkey)
             hotkey = newHotkey
-            NotificationCenter.default.post(name: NSNotification.Name("HotkeySettingsChanged"), object: nil)
+        } catch {
+            recordingError = error.localizedDescription
         }
         
         stopCapturing()
@@ -1356,6 +1376,7 @@ struct HotkeyField: View {
 
 struct LanguageRow: View {
     let language: String
+    var isSupported: Bool = true
     let canRemove: Bool
     let isLast: Bool
     let onRemove: () -> Void
@@ -1366,7 +1387,8 @@ struct LanguageRow: View {
             HStack {
                 Text(Locale.current.localizedString(forIdentifier: language) ?? language)
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isSupported ? .primary : .secondary)
+                    .help(isSupported ? "Used for recognition" : "Saved, but unavailable at this recognition level")
                 
                 Spacer()
                 
