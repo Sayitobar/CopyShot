@@ -3,6 +3,34 @@
     <channel>
         <title>CopyShot</title>
         <item>
+            <title>CopyShot 2.0</title>
+            <link>https://github.com/Sayitobar/CopyShot/releases/tag/v2.0</link>
+            <pubDate>Sat, 17 Oct 2026 21:36:22 GMT</pubDate>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <p>CopyShot 1.1 was a polished proof of concept.
+                Version 2.0 is CopyShot’s first major expansion and
+                the first big step toward a capable capture-to-action tool.</p>
+                <ul>
+                    <li>New QR/barcode, LaTeX formula, and table capture modes.</li>
+                    <li>Quick Actions, on-device translation, custom URL actions,
+                        and shell-script workflows.</li>
+                    <li>OCR inspection and first-launch onboarding.</li>
+                    <li>Capture, recognition, and memory-management optimizations.</li>
+                    <li>Expanded Settings, macOS 26 Liquid Glass styling,
+                        and reliability improvements.</li>
+                    <li>Local diagnostics without captured content.</li>
+                </ul>
+                <p><a href="https://github.com/Sayitobar/CopyShot/releases/tag/v2.0">
+                Read the full release notes</a></p>
+            ]]></description>
+            <enclosure url="https://github.com/Sayitobar/CopyShot/releases/download/v2.0/CopyShot-v2.0.dmg"
+                       length="25262159" type="application/octet-stream"
+                       sparkle:edSignature="Oc98pckMB7g7VtdYw8Cm7Ec2wLmZO2ZNGr0MmhYeNnvK3v1m9z7qWeMDCDOexSoa7eGGZrYOQyozSf4TArWTAA=="/>
+        </item>
+        <item>
             <title>1.1</title>
             <pubDate>Tue, 03 Mar 2026 16:35:46 +0100</pubDate>
             <sparkle:version>1</sparkle:version>
