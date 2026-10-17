@@ -112,6 +112,7 @@ Recognition runs locally using Apple's Vision framework or the installed MFR 1.5
 CopyShot keeps an always-on local `diagnostics.log`, capped at 1 MiB, in its Application Support folder. It records technical events, app/macOS versions, capture modes, and safe error codes; it excludes captured text/images, clipboard contents, script output, URLs, and personal file paths. Nothing is uploaded automatically. Open **Settings → About → App Data Folder** to inspect or share it with a bug report. See [troubleshooting](docs/USAGE.md#troubleshooting).
 
 Sparkle contacts the update feed, and choosing Download fetches the optional LaTeX model from Hugging Face. These requests do not include captures or recognized text; the services receive standard request metadata, such as your IP address. Translation runs on-device on macOS 15+, but Apple may ask to download language packs on first use. Apple may collect translation API usage/performance metadata, including the app bundle ID and language pair, but not the original or translated content, as described in [Apple’s TranslationSession documentation](https://developer.apple.com/documentation/translation/translationsession). Recognition works offline after any required model or language packs are installed.
+
 ---
 
 ## Installation
