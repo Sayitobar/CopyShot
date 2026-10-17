@@ -1,5 +1,9 @@
 # Testing CopyShot
 
+## Build toolchain
+
+Use Xcode 26.2 with the macOS 26.2 SDK for this release. All three GitHub Actions workflows explicitly select `/Applications/Xcode_26.2.app/Contents/Developer` and print the selected Xcode and SDK versions before building. The `macos-15` runner's default Xcode 16.4 lacks the Liquid Glass APIs, so it cannot compile the macOS 26 UI even though those calls have runtime availability checks. The app's minimum deployment target remains macOS 14.0.
+
 ## Fast unit suite
 
 ```bash
