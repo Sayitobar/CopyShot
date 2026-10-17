@@ -27,6 +27,8 @@ struct CustomNotificationView: View {
     var onClose: (() -> Void)? = nil
     var onHeightChange: ((CGFloat) -> Void)? = nil
     var onExpandShelf: (() -> Void)? = nil
+    var onRegionChange: ((HUDRegion, NSRect?) -> Void)? = nil
+    var isPointerOverHandle: (() -> Bool)? = nil
     
     // Testing parameter
     var enableIconShadow: Bool = false
@@ -35,7 +37,6 @@ struct CustomNotificationView: View {
     @State private var isHoveringHandle = false
     @State private var isIndicatorVisible = false
     @State private var isExpanded = false
-    @State private var collapsedHeight: CGFloat = 0
     @State private var compactedHeight: CGFloat = 0
     @State private var expandedHeight: CGFloat = 0
     
@@ -59,7 +60,7 @@ struct CustomNotificationView: View {
                 HStack(spacing: 0) {
                     // Extended hover zone: 4pt on the left (half of the 8pt gap)
                     Color.black.opacity(0.001)
-                        .frame(width: 4, height: isExpanded ? (expandedHeight > 0 ? expandedHeight : 78) : (compactedHeight > 0 ? compactedHeight : 78))
+                        .frame(width: NotificationHUDLayout.hoverBridge, height: isExpanded ? (expandedHeight > 0 ? expandedHeight : 78) : (compactedHeight > 0 ? compactedHeight : 78))
                         .debugZone("HUD 4pt", type: .hover)
                     
                     // The Real Notification Box (hover state tracked strictly on this visible box)
@@ -68,7 +69,7 @@ struct CustomNotificationView: View {
                         .accessibilityIdentifier("qa-hud-content")
                         .background(
                             // Sizing Double: strictly for measuring collapsed height without affecting parent layout or hover bounds
-                            notificationBox(expanded: false)
+                            notificationContent(expanded: false)
                                 .opacity(0)
                                 .allowsHitTesting(false)
                                 .accessibilityHidden(true)
@@ -78,12 +79,12 @@ struct CustomNotificationView: View {
                                         Color.clear.preference(key: CollapsedHeightKey.self, value: geometry.size.height)
                                     }
                                 )
-                                .frame(width: 344, height: 0, alignment: .topLeading)
+                                .frame(width: NotificationHUDLayout.bodyWidth, height: 0, alignment: .topLeading)
                                 .clipped()
                         )
                         .background(
                             // Sizing Double: strictly for measuring expanded height without affecting parent layout or hover bounds
-                            notificationBox(expanded: true)
+                            notificationContent(expanded: true)
                                 .opacity(0)
                                 .allowsHitTesting(false)
                                 .accessibilityHidden(true)
@@ -93,26 +94,30 @@ struct CustomNotificationView: View {
                                         Color.clear.preference(key: ExpandedHeightKey.self, value: geometry.size.height)
                                     }
                                 )
-                                .frame(width: 344, height: 0, alignment: .topLeading)
+                                .frame(width: NotificationHUDLayout.bodyWidth, height: 0, alignment: .topLeading)
                                 .clipped()
                         )
                 }
                 .contentShape(Rectangle())
                 .debugZone("HUD Hit Area", type: .hover)
-                .onHover { hovering in
-                    notificationHoverChanged(hovering)
+                .background {
+                    HUDHoverRegion(onHover: notificationHoverChanged,
+                                   onFrameChange: { onRegionChange?(.notification, $0) })
+                        // Match the close button's actual overhang, not the expanded sizing probe.
+                        .padding(.leading, -max(0, Self.closeButtonOverhang - Self.hoverBridgeWidth))
+                        .padding(.top, -Self.closeButtonOverhang)
                 }
             }
-            .padding(.trailing, 12)
-            .padding(.leading, 12)
-            .padding(.bottom, 28)
-            .padding(.top, 14)
+            .padding(.trailing, NotificationHUDLayout.trailingInset)
+            .padding(.leading, NotificationHUDLayout.leadingInset)
+            .padding(.bottom, NotificationHUDLayout.bottomInset)
+            .padding(.top, NotificationHUDLayout.topInset)
             // The presenter fades the window; keep the HUD stationary throughout dismissal.
             
             // Push content to the top
             Spacer(minLength: 0)
         }
-        // Anchored firmly to top-trailing. Window width is constant (400pt), completely eliminating any teleportation!
+        // The drawing canvas has a fixed maximum shadow budget, so hover never moves the HUD.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         .onPreferenceChange(CollapsedHeightKey.self) { newHeight in
             guard newHeight > 0 else { return }
@@ -137,47 +142,51 @@ struct CustomNotificationView: View {
     }
     
     // MARK: - Left Arrow Hover Indicator (Non-clickable, pure hover trigger)
+
+    private static let closeButtonDiameter = NotificationHUDLayout.closeButtonDiameter
+    private static var closeButtonInset: CGFloat { NotificationHUDLayout.closeButtonInset }
+    private static var closeButtonOverhang: CGFloat { NotificationHUDLayout.closeButtonOverhang }
+    private static let hoverBridgeWidth = NotificationHUDLayout.hoverBridge
     
     @ViewBuilder
     private var leftArrowIndicator: some View {
         HStack(spacing: 0) {
             // Visual Pill (24pt wide)
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.regularMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(
-                                colorScheme == .dark
-                                    ? Color(white: 1.0, opacity: isHoveringHandle ? 0.35 : 0.2)
-                                    : Color(white: 0.0, opacity: isHoveringHandle ? 0.18 : 0.08),
-                                lineWidth: 0.5
-                            )
-                    )
-                
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(isHoveringHandle ? accentColor : .secondary)
-            }
-            .frame(width: 24, height: compactedHeight > 0 ? compactedHeight : 78)
-            .shadow(color: Color.black.opacity(0.12), radius: 4, x: -1, y: 2)
-            .debugZone("Arrow Pill", type: .interactive)
+            Image(systemName: "chevron.left")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(isHoveringHandle ? accentColor : .secondary)
+                .frame(width: NotificationHUDLayout.handleWidth, height: compactedHeight > 0 ? compactedHeight : 78)
+                .modifier(FloatingSurface(cornerRadius: 14, capsule: true, interactive: true))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(
+                            colorScheme == .dark
+                                ? Color(white: 1.0, opacity: isHoveringHandle ? 0.35 : 0.2)
+                                : Color(white: 0.0, opacity: isHoveringHandle ? 0.18 : 0.08),
+                            lineWidth: 0.5
+                        )
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: NotificationHUDLayout.handleShadow.radius,
+                        x: NotificationHUDLayout.handleShadow.x, y: NotificationHUDLayout.handleShadow.y)
+                .debugZone("Arrow Pill", type: .interactive)
             
             // Extended hover zone: 4pt on the right (half of the 8pt gap)
             Color.black.opacity(0.001)
-                .frame(width: 4, height: compactedHeight > 0 ? compactedHeight : 78)
+                .frame(width: NotificationHUDLayout.hoverBridge, height: compactedHeight > 0 ? compactedHeight : 78)
                 .debugZone("Arrow 4pt", type: .hover)
         }
         .contentShape(Rectangle())
-        .onHover { hovering in
-            handleHoverChanged(hovering)
+        .background {
+            HUDHoverRegion(enabled: supportsQuickActions && isIndicatorVisible && !isShelfOpen,
+                           onHover: handleHoverChanged,
+                           onFrameChange: { onRegionChange?(.handle, $0) })
         }
     }
     
     // MARK: - Notification Box
     
     @ViewBuilder
-    private func notificationBox(expanded: Bool) -> some View {
+    private func notificationContent(expanded: Bool) -> some View {
         HStack(alignment: .top, spacing: 14) {
             if isRunningAction {
                 ProgressView().controlSize(.small)
@@ -221,14 +230,16 @@ struct CustomNotificationView: View {
             }
             Spacer(minLength: 0)
         }
-        // NOTE: Custom floating HUD layout tuned for macOS 15.0+ Sequoia.
-        // Geometry: 344pt width, 16pt continuous corner radius, regularMaterial.
         .padding(16)
-        .frame(width: 344, alignment: .topLeading)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .frame(width: NotificationHUDLayout.bodyWidth, alignment: .topLeading)
+    }
+
+    private func notificationBox(expanded: Bool) -> some View {
+        notificationContent(expanded: expanded)
+        .clipShape(RoundedRectangle(cornerRadius: PlatformUIStyle.notificationCornerRadius, style: .continuous))
+        .modifier(FloatingSurface(cornerRadius: PlatformUIStyle.notificationCornerRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: PlatformUIStyle.notificationCornerRadius, style: .continuous)
                 .stroke(colorScheme == .dark ? Color(white: 1.0, opacity: 0.3) : Color(white: 0.0, opacity: 0.1), lineWidth: 0.5)
         )
         // Close Button (Top Leading) - only visible when hovering the notification box itself!
@@ -239,9 +250,8 @@ struct CustomNotificationView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.primary)
-                    .frame(width: 19, height: 19)
-                    .background(Color(white: colorScheme == .dark ? 55.0/255.0 : 220.0/255.0))
-                    .clipShape(Circle())
+                    .frame(width: Self.closeButtonDiameter, height: Self.closeButtonDiameter)
+                    .background(HUDControlBackground())
                     .overlay(
                         Circle().stroke(colorScheme == .dark ? Color.white.opacity(0.3) : Color.black.opacity(0.1), lineWidth: 0.5)
                     )
@@ -250,8 +260,10 @@ struct CustomNotificationView: View {
             .help(isRunningAction ? "Cancel waiting for this action (external scripts may continue running)" : "Close notification")
             .buttonStyle(.plain)
             .debugZone("Close", type: .interactive)
-            .offset(x: -6, y: -6)
+            .offset(x: Self.closeButtonInset, y: Self.closeButtonInset)
             .opacity(isHoveringNotification ? 1 : 0)
+            .allowsHitTesting(isHoveringNotification)
+            .accessibilityHidden(!isHoveringNotification)
             .animation(.easeInOut(duration: 0.2), value: isHoveringNotification)
         }
         // Expand/Collapse Button (Bottom Trailing) - only visible when hovering the notification box itself!
@@ -266,8 +278,7 @@ struct CustomNotificationView: View {
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(.primary)
                         .frame(width: 22, height: 22)
-                        .background(Color(white: colorScheme == .dark ? 55.0/255.0 : 220.0/255.0))
-                        .clipShape(Circle())
+                        .background(HUDControlBackground())
                         .shadow(color: Color.black.opacity(0.1), radius: 1)
                 }
                 .buttonStyle(.plain)
@@ -275,6 +286,8 @@ struct CustomNotificationView: View {
                 .debugZone("Expand", type: .interactive)
                 .padding(10)
                 .opacity(isHoveringNotification ? 1 : 0)
+                .allowsHitTesting(isHoveringNotification)
+                .accessibilityHidden(!isHoveringNotification)
                 .animation(.easeInOut(duration: 0.2), value: isHoveringNotification)
             }
         }
@@ -288,7 +301,7 @@ struct CustomNotificationView: View {
             isHoveringNotification = hovering
             if hovering {
                 isIndicatorVisible = true
-            } else if !isHoveringHandle {
+            } else if !isHoveringHandle && !(isPointerOverHandle?() ?? false) {
                 isIndicatorVisible = false
             }
         }

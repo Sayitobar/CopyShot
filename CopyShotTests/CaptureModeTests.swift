@@ -39,6 +39,18 @@ struct CaptureModeTests {
         #expect(interaction.selectedMode == CaptureModeDescriptor.available[1].id)
     }
 
+    @Test("Cancelling a radial gesture clears its candidate without committing a mode")
+    func cancelDoesNotCommit() {
+        let interaction = CaptureModeInteraction()
+        interaction.begin(at: .zero)
+        interaction.move(to: CGPoint(x: 80, y: 0))
+        interaction.cancel()
+        interaction.end(at: CGPoint(x: 80, y: 0))
+        #expect(interaction.selectedMode == .standardOCR)
+        #expect(interaction.pressPoint == nil)
+        #expect(interaction.candidateIndex == nil)
+    }
+
     @Test("A mode picked on one display applies to another display")
     func sharesAcrossDisplays() {
         let selection = CaptureModeSelection()

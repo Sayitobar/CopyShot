@@ -116,5 +116,10 @@ struct ActionIconView: View {
                 }
             }
         }
+        .transaction { transaction in
+            // The cached template stays in place: Tahoe must not animate its tint
+            // through the pill's inherited glass/hover transaction.
+            if PlatformUIStyle.usesLiquidGlass { transaction.animation = nil }
+        }
     }
 }

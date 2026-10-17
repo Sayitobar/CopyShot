@@ -26,7 +26,7 @@ struct ModernDropdownTheme {
     static let shadowLight = bgLightNormal
     
     // Geometry & Layout Metrics
-    static let cornerRadius: CGFloat = 6
+    static var cornerRadius: CGFloat { PlatformUIStyle.controlCornerRadius }
     static let borderWidth: CGFloat = 0.75
     static let horizontalPadding: CGFloat = 9
     static let verticalPadding: CGFloat = 4.5

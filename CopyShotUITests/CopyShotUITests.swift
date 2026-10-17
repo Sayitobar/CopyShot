@@ -10,6 +10,76 @@ import AppKit
 
 final class CopyShotUITests: XCTestCase {
     @MainActor
+    func testFittingSettingsPagesHaveNoScrollbarsWithMousePreferences() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings", "-AppleShowScrollBars", "Always"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        app.launch()
+        let settings = app.windows["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        // Quick Actions deliberately keeps catalog/help overflow inside a fixed baseline viewport.
+        for tab in ["General", "Capture", "Notifications", "About"] {
+            settings.buttons["settings-tab-\(tab)"].click()
+            _ = settledWindowHeight(settings)
+            XCTAssertEqual(settings.scrollBars.count, 0, "\(tab) fits without reserving a scrollbar, even with a virtual mouse.")
+        }
+    }
+
+    @MainActor
+    func testCollapsedHUDReleasesExpandedHoverArea() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings", "--ui-testing-qa-fixture"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        app.launch()
+        let hud = app.descendants(matching: .any)["qa-hud-content"]
+        XCTAssertTrue(hud.waitForExistence(timeout: 10))
+        let compactHeight = hud.frame.height
+        hud.hover()
+        app.buttons["Expand notification"].click()
+        let collapse = app.buttons["Collapse notification"]
+        XCTAssertTrue(collapse.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(hud.frame.height, compactHeight)
+        collapse.click()
+        let compactAgain = NSPredicate { _, _ in abs(hud.frame.height - compactHeight) < 1 }
+        expectation(for: compactAgain, evaluatedWith: hud)
+        waitForExpectations(timeout: 3)
+        hud.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 1)).withOffset(CGVector(dx: 0, dy: 40)).hover()
+        let screenshot = XCTAttachment(screenshot: hud.screenshot())
+        screenshot.name = "Hover below collapsed HUD"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        let expand = app.buttons["Expand notification"]
+        let hiddenControls = NSPredicate { _, _ in !expand.isHittable }
+        expectation(for: hiddenControls, evaluatedWith: expand)
+        waitForExpectations(timeout: 3)
+        hud.hover()
+        let visibleControls = NSPredicate { _, _ in expand.isHittable }
+        expectation(for: visibleControls, evaluatedWith: expand)
+        waitForExpectations(timeout: 3)
+    }
+
+    @MainActor
+    func testNestedLanguageListStillScrollsWhenCapturePageFits() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing-show-settings", "-AppleShowScrollBars", "Always"]
+        app.launchEnvironment["COPYSHOT_UI_TEST_SETTINGS_SUITE"] = "CopyShot.UITests.\(UUID().uuidString)"
+        app.launch()
+        let settings = app.windows["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.buttons["settings-tab-Capture"].click()
+        for language in ["de-DE", "fr-FR", "it-IT", "es-ES", "pt-BR"] {
+            settings.buttons["settings-add-language-picker"].click()
+            app.menuItems[Locale.current.localizedString(forIdentifier: language) ?? language].click()
+        }
+        _ = settledWindowHeight(settings)
+        let languages = settings.scrollViews["settings-recognition-languages"]
+        XCTAssertTrue(languages.exists)
+        XCTAssertEqual(languages.scrollBars.count, 1, "Overflow in the nested list must retain its scrollbar.")
+        languages.scroll(byDeltaX: 0, deltaY: -300)
+        XCTAssertTrue(languages.staticTexts[Locale.current.localizedString(forIdentifier: "pt-BR") ?? "pt-BR"].isHittable)
+    }
+
+    @MainActor
     func testWelcomeMenuEntryRequiresDebugZones() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing-show-settings"]
@@ -442,12 +512,24 @@ final class CopyShotUITests: XCTestCase {
         let hud = app.descendants(matching: .any)["qa-hud-content"]
         XCTAssertTrue(hud.waitForExistence(timeout: 10))
         hud.hover()
-        app.descendants(matching: .any)["qa-shelf-handle"].hover()
         let parent = app.buttons["qa-action-search_web"]
+        // Pointer travel can cross the handle and open the shelf before the hover call returns.
+        if !parent.waitForExistence(timeout: 1) {
+            app.descendants(matching: .any)["qa-shelf-handle"].hover()
+        }
         XCTAssertTrue(parent.waitForExistence(timeout: 5))
+        let visibleHUDTop = hud.frame.minY
+        let alignmentScreenshot = XCTAttachment(screenshot: app.screenshot())
+        alignmentScreenshot.name = "HUD and shelf top alignment"
+        alignmentScreenshot.lifetime = .keepAlways
+        add(alignmentScreenshot)
+        XCTAssertEqual(parent.frame.minY, visibleHUDTop, accuracy: 1,
+                       "The first shelf pill must align with the visible notification top.")
         parent.hover()
         let first = app.buttons["qa-action-barcode_web_0"]
         XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertEqual(first.frame.minY, visibleHUDTop, accuracy: 1,
+                       "The submenu's first pill must share the HUD's visible top edge.")
         first.hover()
         let submenu = app.descendants(matching: .any)["qa-submenu-content"]
         // Accessibility coordinates start at the primary screen's top-left. The runner's

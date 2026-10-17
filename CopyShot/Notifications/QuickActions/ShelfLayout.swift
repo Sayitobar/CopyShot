@@ -65,6 +65,15 @@ enum ShelfLayout {
         min(naturalHeight, max(0, availableHeight))
     }
 
+    /// Window coordinates: clear shadow margins are never hover or click targets.
+    static func interactiveRect(windowSize: CGSize, bridgeWidth: CGFloat, activeHeight: CGFloat? = nil) -> CGRect {
+        let active = min(windowSize.height, activeHeight ?? windowSize.height)
+        return CGRect(x: ActionShelfView.paddingLeading,
+                      y: windowSize.height - active + ActionShelfView.paddingBottom,
+                      width: ActionShelfView.pillWidth + bridgeWidth,
+                      height: max(0, active - ActionShelfView.paddingTop - ActionShelfView.paddingBottom))
+    }
+
     @MainActor
     static func naturalHeight(actions: [QuickAction], submenu: Bool) -> CGFloat {
         guard !actions.isEmpty else { return 0 }
@@ -89,8 +98,19 @@ struct ShelfScrollingColumn<Content: View>: View {
         if let viewportHeight {
             ScrollView(.vertical, showsIndicators: true) { content() }
                 .frame(width: width, height: viewportHeight)
+                .scrollClipDisabled()
+                // Keep vertical overflow clipped, but let shadows use the window's horizontal canvas.
+                .clipShape(ShelfHorizontalShadowClip())
         } else {
             content().frame(width: width)
         }
+    }
+}
+
+private struct ShelfHorizontalShadowClip: Shape {
+    func path(in rect: CGRect) -> Path {
+        let insets = ActionPillTheme.shadowDrawingInsets
+        return Path(CGRect(x: rect.minX - insets.leading, y: rect.minY,
+                           width: rect.width + insets.leading + insets.trailing, height: rect.height))
     }
 }

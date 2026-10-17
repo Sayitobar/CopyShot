@@ -65,6 +65,10 @@ final class CaptureModeInteraction: ObservableObject {
             let selectedMode = CaptureModeDescriptor.available[candidateIndex].id
             selection.selectMode(selectedMode)
         }
+        cancel()
+    }
+
+    func cancel() {
         pressPoint = nil
         menuCenter = nil
         candidateIndex = nil

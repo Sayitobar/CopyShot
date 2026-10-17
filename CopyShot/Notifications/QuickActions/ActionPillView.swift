@@ -13,7 +13,7 @@ import AppKit
 struct ActionPillTheme {
     static let pillWidth: CGFloat = 216
     static let pillHeight: CGFloat = 38
-    static let cornerRadius: CGFloat = 14
+    static var cornerRadius: CGFloat { PlatformUIStyle.usesLiquidGlass ? pillHeight / 2 : 14 }
     static let borderWidth: CGFloat = 0.5
     static let horizontalPadding: CGFloat = 10
     static let verticalPadding: CGFloat = 8
@@ -57,6 +57,11 @@ struct ActionPillTheme {
     static func shadowY(isHovered: Bool) -> CGFloat {
         isHovered ? 4 : 2
     }
+
+    static var shadowDrawingInsets: EdgeInsets {
+        FloatingShadowMetrics(radius: shadowRadius(isHovered: true), x: 0, y: shadowY(isHovered: true))
+            .outsets(size: CGSize(width: pillWidth, height: pillHeight), scale: hoverScale)
+    }
     
     static func chevronOpacity(isActive: Bool) -> Double {
         isActive ? 0.9 : 0.45
@@ -73,6 +78,7 @@ struct ActionPillView: View {
     let accentColor: Color
     var isSubmenuActive: Bool = false
     var isHovered: Bool = false
+    var isDimmed: Bool = false
     let onSelect: () -> Void
     var onHover: ((Bool) -> Void)? = nil
     
@@ -128,15 +134,12 @@ struct ActionPillView: View {
             .padding(.horizontal, ActionPillTheme.horizontalPadding)
             .padding(.vertical, ActionPillTheme.verticalPadding)
             .frame(width: ActionPillTheme.pillWidth, height: ActionPillTheme.pillHeight, alignment: .leading)
-            .background(
-                // Base material matching notification box
-                RoundedRectangle(cornerRadius: ActionPillTheme.cornerRadius, style: .continuous)
-                    .fill(.regularMaterial)
-            )
+            .modifier(PillForegroundDimming(isDimmed: isDimmed))
+            .modifier(FloatingSurface(cornerRadius: ActionPillTheme.cornerRadius, capsule: true, interactive: true))
             .overlay(
                 // Hover & active highlight overlay
                 RoundedRectangle(cornerRadius: ActionPillTheme.cornerRadius, style: .continuous)
-                    .fill(Color.primary.opacity(ActionPillTheme.highlightOpacity(isHovered: isHovered, isSubmenuActive: isSubmenuActive, isDark: colorScheme == .dark)))
+                    .fill(Color.primary.opacity(PlatformUIStyle.usesLiquidGlass ? 0 : ActionPillTheme.highlightOpacity(isHovered: isHovered, isSubmenuActive: isSubmenuActive, isDark: colorScheme == .dark)))
             )
             .overlay(
                 // Authentic Apple light boundary stroke
@@ -152,7 +155,7 @@ struct ActionPillView: View {
                 x: 0,
                 y: ActionPillTheme.shadowY(isHovered: isHovered)
             )
-            .scaleEffect(isHovered ? ActionPillTheme.hoverScale : ActionPillTheme.normalScale)
+            .scaleEffect(!PlatformUIStyle.usesLiquidGlass && isHovered ? ActionPillTheme.hoverScale : ActionPillTheme.normalScale)
             .animation(ActionPillTheme.hoverAnimation, value: isHovered)
             .animation(ActionPillTheme.activeAnimation, value: isSubmenuActive)
             .contentShape(RoundedRectangle(cornerRadius: ActionPillTheme.cornerRadius, style: .continuous))
@@ -186,5 +189,14 @@ struct ActionPillView: View {
             isHovered: isActive,
             accentColor: accentColor
         )
+    }
+}
+
+private struct PillForegroundDimming: ViewModifier {
+    let isDimmed: Bool
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.opacity(isDimmed ? ActionShelfView.Theme.dimmedOpacity : 1)
+        } else { content }
     }
 }

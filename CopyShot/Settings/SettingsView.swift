@@ -136,7 +136,13 @@ final class SettingsWindowManager: NSObject, NSWindowDelegate {
         }
         
         let mouseLocation = NSEvent.mouseLocation
-        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first
+        var targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first
+        #if DEBUG
+        // Keep the existing UI fixture on the runner's display, including its menu bar.
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-show-settings") {
+            targetScreen = NSScreen.screens.first
+        }
+        #endif
         self.targetScreen = targetScreen
         
         if let existingWindow = self.window {
@@ -349,8 +355,8 @@ struct SettingsView: View {
                 }
                 .background(alignment: .leading) {
                     let index = CGFloat(SettingsTab.allCases.firstIndex(of: visibleTab) ?? 0)
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(colorScheme == .dark ? Color(red: 70/255, green: 70/255, blue: 70/255) : Color(red: 226/255, green: 226/255, blue: 226/255))
+                    RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous)
+                        .fill(colorScheme == .dark ? Color(white: 70.0 / 255) : Color(white: PlatformUIStyle.lightModeControlGray))
                         .shadow(color: .clear, radius: 0)
                         .frame(width: TabButton.tabWidth, height: TabButton.tabHeight)
                         .offset(x: index * (TabButton.tabWidth + TabButton.tabSpacing))
@@ -380,7 +386,7 @@ struct SettingsView: View {
             
             // 2. CONTENT AREA
             ZStack(alignment: .top) {
-                ScrollView(.vertical, showsIndicators: isScrollNeeded) {
+                ScrollView(.vertical) {
                     ZStack(alignment: .top) {
                         let activeTransition = enableContentAnimations ? AnyTransition.slideFade : .identity
                         tabContentView(for: visibleTab)
@@ -395,7 +401,8 @@ struct SettingsView: View {
                         }
                     )
                 }
-                .scrollDisabled(!isScrollNeeded)
+                .scrollIndicators(isScrollNeeded ? .automatic : .never, axes: .vertical)
+                .scrollBounceBehavior(.basedOnSize)
                 
                 // Linear Gradient Shadow that behaves exclusively as an internal under-lay, drawing on top of scrolled content!
                 LinearGradient(
@@ -429,9 +436,7 @@ struct SettingsView: View {
                     .allowsHitTesting(false)
             }
         }
-        // Shunts content UP into the transparent titlebar void to align tabs on the traffic light row.
-        // Tuned for macOS 15 titlebar geometry (28pt height). If future macOS versions alter titlebar height, adjust here.
-        .padding(.top, -28)
+        .modifier(SettingsTitlebarLayout())
         .frame(minWidth: 540, maxWidth: 540, minHeight: 0, maxHeight: .infinity, alignment: .top)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .background(
@@ -498,6 +503,17 @@ struct SettingsView: View {
     }
 }
 
+/// Keep Sequoia's existing layout; Tahoe uses the actual full-size content area.
+private struct SettingsTitlebarLayout: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *) {
+            content.ignoresSafeArea(.container, edges: .top)
+        } else {
+            content.padding(.top, -28)
+        }
+    }
+}
+
 // MARK: - Custom Tab Button
 struct TabButton: View {
     let tab: SettingsTab
@@ -538,7 +554,7 @@ struct TabButton: View {
             .background(
                 Group {
                     if isHovered && !isSelected && !isTransitioning {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous)
                             .fill(Color.secondary.opacity(0.05))
                     }
                 }
@@ -881,9 +897,9 @@ struct CaptureSettingsView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .background(Color(NSColor.controlBackgroundColor).opacity(0.55))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: PlatformUIStyle.groupCornerRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: PlatformUIStyle.groupCornerRadius, style: .continuous)
                         .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
                 )
                 .animation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.25), value: activeMode)
@@ -935,7 +951,7 @@ struct CaptureSettingsView: View {
                     )
                     
                     if !settings.recognitionLanguages.isEmpty {
-                        ScrollView(.vertical, showsIndicators: settings.recognitionLanguages.count > 3) {
+                        ScrollView(.vertical) {
                             VStack(spacing: 0) {
                                 ForEach(Array(settings.recognitionLanguages.enumerated()), id: \.element) { index, language in
                                     LanguageRow(
@@ -949,12 +965,14 @@ struct CaptureSettingsView: View {
                                 }
                             }
                         }
+                        .scrollIndicators(settings.recognitionLanguages.count > 3 ? .automatic : .never, axes: .vertical)
+                        .accessibilityIdentifier("settings-recognition-languages")
                         .frame(width: 200)
                         .frame(maxHeight: 110)
                         .background(Color(NSColor.controlBackgroundColor).opacity(0.55))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous)
                                 .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
                         )
                     }
@@ -1178,8 +1196,8 @@ struct SettingsUtilityButton: View {
             .padding(.horizontal, isHovered ? 12 : 10)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color(white: colorScheme == .dark ? 0.25 : 0.85).opacity(isHovered ? 1.0 : 0.7))
+                RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous)
+                    .fill(Color(white: colorScheme == .dark ? 0.25 : PlatformUIStyle.lightModeControlGray))
             )
             .opacity(isEnabled ? 1.0 : 0.4)
         }

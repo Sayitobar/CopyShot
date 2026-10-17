@@ -25,6 +25,15 @@ private final class ShelfPresentationState {
 
 /// Specialized borderless floating window that can become key to intercept 1-9 quick action hotkeys on hover without warning
 final class NotificationHUDWindow: NSWindow {
+    var allowsShadowCanvasOutsideVisibleFrame = false
+
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        // Shelf content is positioned inside a measured shadow canvas. Constraining
+        // the canvas to the menu bar moves the visible pills away from the HUD.
+        if allowsShadowCanvasOutsideVisibleFrame { return frameRect }
+        return super.constrainFrameRect(frameRect, to: screen)
+    }
+
     override var canBecomeKey: Bool {
         return true
     }
@@ -44,7 +53,8 @@ final class NotificationHostingView<Content: View>: NSHostingView<Content> {
     
     override func hitTest(_ point: NSPoint) -> NSView? {
         if let isHit = isHitInNotificationBox {
-            if !isHit(point) {
+            let windowPoint = superview?.convert(point, to: nil) ?? point
+            if !isHit(windowPoint) {
                 return nil
             }
         }
@@ -55,9 +65,10 @@ final class NotificationHostingView<Content: View>: NSHostingView<Content> {
 @MainActor
 class NotificationPresenter: ObservableObject {
     static func isPointInVisibleBox(_ point: NSPoint, windowHeight: CGFloat, visibleBoxHeight: CGFloat) -> Bool {
-        let boxHeight = max(visibleBoxHeight, 78)
-        let thresholdY = windowHeight - 14 - boxHeight - 20
-        return point.y >= thresholdY && point.y <= windowHeight + 10
+        NSRect(x: NotificationHUDLayout.leadingInset,
+               y: windowHeight - NotificationHUDLayout.topInset - visibleBoxHeight,
+               width: NotificationHUDLayout.width - NotificationHUDLayout.leadingInset - NotificationHUDLayout.trailingInset,
+               height: max(0, visibleBoxHeight)).contains(point)
     }
 
     private let configProvider: () -> QuickActionsConfig
@@ -170,18 +181,24 @@ class NotificationPresenter: ObservableObject {
     private weak var previousApp: NSRunningApplication?
     private var shelfLivenessTimer: Timer?
     
-    private let fixedNotificationWindowWidth: CGFloat = 400
+    private let fixedNotificationWindowWidth = NotificationHUDLayout.width
     private var currentVisibleBoxHeight: CGFloat = 78
+    private var interactiveHUDFrames: [HUDRegion: NSRect] = [:]
     
-    /// Deterministically computed bounding box of the visible notification HUD box (inside the 400pt notificationWindow).
-    /// Used for strict hit-testing to prevent transparent window margins from hijacking hover states.
-    private var visibleNotificationBoxFrame: NSRect? {
-        guard let window = notificationWindow, isShowingNotification, window.isVisible else { return nil }
-        let boxWidth: CGFloat = 376 // Covers 28pt left arrow + 4pt gap + 344pt notification box
-        let boxHeight = currentVisibleBoxHeight > 0 ? currentVisibleBoxHeight : max(window.frame.height - 42, 0)
-        let boxX = window.frame.origin.x + 12
-        let boxY = (window.frame.origin.y + window.frame.height - 14) - boxHeight
-        return NSRect(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
+    /// Live screen-space regions reported by the displayed HUD and handle, never the sizing probes.
+    private func isPointOverNotification(_ point: NSPoint) -> Bool {
+        guard isShowingNotification, notificationWindow?.isVisible == true else { return false }
+        return interactiveHUDFrames.values.contains { $0.contains(point) }
+    }
+
+    fileprivate var pointerIsOverHandle: Bool {
+        interactiveHUDFrames[.handle]?.contains(NSEvent.mouseLocation) ?? false
+    }
+
+    private var mainShelfInteractiveFrame: NSRect? {
+        guard let window = shelfWindow, window.isVisible else { return nil }
+        return window.convertToScreen(ShelfLayout.interactiveRect(windowSize: window.frame.size,
+                                                                  bridgeWidth: shelfHoverGapTrailing))
     }
     
     private func startShelfLivenessTracking() {
@@ -203,9 +220,9 @@ class NotificationPresenter: ObservableObject {
         }
         
         let mouseLoc = NSEvent.mouseLocation
-        let isOverMainShelf = shelfWindow?.frame.contains(mouseLoc) ?? false
+        let isOverMainShelf = mainShelfInteractiveFrame?.contains(mouseLoc) ?? false
         let isOverSubShelf = (activeSubmenu != nil) && (subShelfInteractiveFrame?.contains(mouseLoc) ?? false)
-        let isOverNotifBox = visibleNotificationBoxFrame?.contains(mouseLoc) ?? false
+        let isOverNotifBox = isPointOverNotification(mouseLoc)
         
         if !isOverMainShelf && !isOverSubShelf && !isOverNotifBox {
             stopShelfLivenessTracking()
@@ -216,6 +233,7 @@ class NotificationPresenter: ObservableObject {
     
     // Geometry metrics for Shelf Window (with breathing margins for hover scaling & shadows)
     private let shelfPaddingLeading: CGFloat = ActionShelfView.paddingLeading
+    private let shelfPaddingTrailing: CGFloat = ActionShelfView.paddingTrailing
     private let shelfPaddingTop: CGFloat = ActionShelfView.paddingTop
     private let shelfPaddingBottom: CGFloat = ActionShelfView.paddingBottom
     private let shelfHoverGapTrailing: CGFloat = ActionShelfView.hoverGapTrailing
@@ -223,11 +241,11 @@ class NotificationPresenter: ObservableObject {
     private let shelfColumnGap: CGFloat = ActionShelfView.columnGap
     
     private var mainShelfWindowWidth: CGFloat {
-        shelfPaddingLeading + shelfPillsWidth + shelfHoverGapTrailing
+        shelfPaddingLeading + shelfPillsWidth + shelfHoverGapTrailing + shelfPaddingTrailing
     }
     
     private var subShelfWindowWidth: CGFloat {
-        shelfPaddingLeading + shelfPillsWidth + shelfColumnGap
+        ActionSubShelfView.paddingLeading + shelfPillsWidth + shelfColumnGap + ActionSubShelfView.paddingTrailing
     }
     
     func showNotification(
@@ -275,6 +293,7 @@ class NotificationPresenter: ObservableObject {
         self.hoverGraceTimer?.cancel()
         self.hoverGraceTimer = nil
         self.currentVisibleBoxHeight = 78
+        self.interactiveHUDFrames.removeAll()
         self.isHoveringNotification = false
         self.isHoveringShelf = false
         
@@ -316,10 +335,15 @@ class NotificationPresenter: ObservableObject {
                 DispatchQueue.main.async {
                     guard self.sessionGeneration == generation else { return }
                     self.currentVisibleBoxHeight = newHeight
-                    if let win = self.notificationWindow, newHeight + 42 > win.frame.height {
+                    if let win = self.notificationWindow,
+                       newHeight + NotificationHUDLayout.topInset + NotificationHUDLayout.bottomInset > win.frame.height {
                         self.updateNotificationWindowHeight(newHeight)
                     }
                 }
+            },
+            onRegionChange: { [weak self] region, frame in
+                guard let self, self.sessionGeneration == generation else { return }
+                self.interactiveHUDFrames[region] = frame
             },
             onExpandShelf: { [weak self] in
                 self?.openActionShelf()
@@ -332,9 +356,11 @@ class NotificationPresenter: ObservableObject {
                 return true
             }
             // In AppKit window coordinates, (0, 0) is bottom-left. The notification is anchored at the top.
-            return Self.isPointInVisibleBox(
-                point, windowHeight: window.frame.height, visibleBoxHeight: self.currentVisibleBoxHeight
-            )
+            if self.interactiveHUDFrames.isEmpty {
+                return Self.isPointInVisibleBox(point, windowHeight: window.frame.height,
+                                               visibleBoxHeight: self.currentVisibleBoxHeight)
+            }
+            return self.isPointOverNotification(window.convertPoint(toScreen: point))
         }
         hostingView = host
         notificationWindow?.contentView = host
@@ -366,18 +392,19 @@ class NotificationPresenter: ObservableObject {
         hoverGraceTimer = nil
         startShelfLivenessTracking()
         
-        // Anchor calculation:
-        // Inside notificationWindow (400pt wide), notificationBox starts at origin.x + 44
-        // Midpoint of the 8pt gap between shelf pills and notif box is at notifWindow.frame.origin.x + 40
-        // The right edge of shelfWindow touches the midpoint boundary:
+        // Anchor the visible bridge; changing the shadow canvas must not move the pills.
         let width = mainShelfWindowWidth
-        let shelfX = (notifWindow.frame.origin.x + 40) - width
+        let shelfX = notifWindow.frame.minX + NotificationHUDLayout.shelfBridgeEnd - width + shelfPaddingTrailing
         
-        // Top of notification box inside notificationWindow:
-        let notifBoxTopY = notifWindow.frame.origin.y + notifWindow.frame.height - 14
+        // Use the live HUD geometry, excluding only the close control's measured overhang.
+        // This also follows any safe-area adjustment applied to the HUD itself.
+        let notifBoxTopY = interactiveHUDFrames[.notification].map { $0.maxY - NotificationHUDLayout.closeButtonOverhang }
+            ?? (notifWindow.frame.maxY - NotificationHUDLayout.topInset)
         let screen = targetScreen ?? NSScreen.main!
-        let shelfTop = min(screen.visibleFrame.maxY, notifBoxTopY + shelfPaddingTop)
-        let shelfHeight = ShelfLayout.viewportHeight(naturalHeight: mainShelfNaturalHeight, availableHeight: shelfTop - screen.visibleFrame.minY)
+        // The shadow-only canvas may extend beyond the screen; never push the visible pills down.
+        let shelfTop = notifBoxTopY + shelfPaddingTop
+        let shelfHeight = ShelfLayout.viewportHeight(naturalHeight: mainShelfNaturalHeight,
+                                                     availableHeight: min(screen.visibleFrame.height, shelfTop - screen.visibleFrame.minY))
         mainShelfScrollHeight = mainShelfNaturalHeight > shelfHeight ? max(0, shelfHeight - shelfPaddingTop - shelfPaddingBottom) : nil
         let shelfY = shelfTop - shelfHeight
         
@@ -391,6 +418,7 @@ class NotificationPresenter: ObservableObject {
                 defer: false
             )
             shelfWindow?.isOpaque = false
+            shelfWindow?.allowsShadowCanvasOutsideVisibleFrame = true
             shelfWindow?.backgroundColor = .clear
             shelfWindow?.level = .floating
             shelfWindow?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -418,6 +446,13 @@ class NotificationPresenter: ObservableObject {
         if shelfHostingView == nil {
             let container = ActionShelfContainerView(state: shelfState, presenter: self)
             let host = NotificationHostingView(rootView: AnyView(container))
+            // This borderless canvas already includes its own shadow insets. Automatic
+            // menu-bar safe areas would add a second top inset and misalign the pills.
+            host.safeAreaRegions = []
+            host.isHitInNotificationBox = { [weak self, weak host] point in
+                guard let self, let window = host?.window else { return false }
+                return self.mainShelfInteractiveFrame?.contains(window.convertPoint(toScreen: point)) ?? false
+            }
             shelfHostingView = host
             shelfWindow?.contentView = host
         }
@@ -435,15 +470,20 @@ class NotificationPresenter: ObservableObject {
         activeSubmenu = action
         
         let subWidth = subShelfWindowWidth
-        let subX = shelf.frame.origin.x - (shelfPillsWidth + shelfColumnGap)
+        let mainPillLeft = shelf.frame.minX + shelfPaddingLeading
+        let subX = mainPillLeft - shelfColumnGap - shelfPillsWidth - ActionSubShelfView.paddingLeading
         
-        let subHeight = ShelfLayout.viewportHeight(naturalHeight: subShelfNaturalHeight, availableHeight: shelf.frame.maxY - screen.visibleFrame.minY)
+        let subHeight = ShelfLayout.viewportHeight(naturalHeight: subShelfNaturalHeight,
+                                                   availableHeight: min(screen.visibleFrame.height, shelf.frame.maxY - screen.visibleFrame.minY))
         let naturalHeight = shelfMeasurements.submenuHeight(for: action)
         let activeHeight = min(subHeight, naturalHeight)
         subShelfViewportHeight = subHeight
         subShelfScrollHeight = activeHeight < naturalHeight ? max(0, activeHeight - shelfPaddingTop - shelfPaddingBottom) : nil
         let subY = shelf.frame.maxY - subHeight
-        subShelfInteractiveFrame = NSRect(x: subX, y: shelf.frame.maxY - activeHeight, width: subWidth, height: activeHeight)
+        let interactiveRect = ShelfLayout.interactiveRect(windowSize: CGSize(width: subWidth, height: subHeight),
+                                                         bridgeWidth: ActionSubShelfView.bridgeTrailing,
+                                                         activeHeight: activeHeight)
+        subShelfInteractiveFrame = interactiveRect.offsetBy(dx: subX, dy: subY)
         
         let subFrame = NSRect(x: subX, y: subY, width: subWidth, height: subHeight)
         
@@ -455,11 +495,13 @@ class NotificationPresenter: ObservableObject {
                 defer: false
             )
             subShelfWindow?.isOpaque = false
+            subShelfWindow?.allowsShadowCanvasOutsideVisibleFrame = true
             subShelfWindow?.backgroundColor = .clear
             subShelfWindow?.level = .floating
             subShelfWindow?.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             subShelfWindow?.hidesOnDeactivate = false
             subShelfWindow?.acceptsMouseMovedEvents = true
+            subShelfWindow?.alphaValue = 0
         } else {
             subShelfWindow?.setFrame(subFrame, display: true)
         }
@@ -469,12 +511,13 @@ class NotificationPresenter: ObservableObject {
             host.rootView = AnyView(container)
         } else {
             let host = NotificationHostingView(rootView: AnyView(container))
+            host.safeAreaRegions = []
             subShelfHostingView = host
             subShelfWindow?.contentView = host
         }
         
         if let host = subShelfHostingView as? NotificationHostingView<AnyView> {
-            host.isHitInNotificationBox = { point in point.y >= subHeight - activeHeight }
+            host.isHitInNotificationBox = { interactiveRect.contains($0) }
         }
         subShelfWindow?.orderFrontRegardless()
         if subShelfWindow?.alphaValue ?? 0 < 1.0 {
@@ -578,7 +621,7 @@ class NotificationPresenter: ObservableObject {
             
             let mouseLoc = NSEvent.mouseLocation
             let isOverSub = self.subShelfInteractiveFrame?.contains(mouseLoc) ?? false
-            let isOverMain = self.shelfWindow?.frame.contains(mouseLoc) ?? false
+            let isOverMain = self.mainShelfInteractiveFrame?.contains(mouseLoc) ?? false
             
             if isOverSub {
                 return
@@ -727,9 +770,9 @@ class NotificationPresenter: ObservableObject {
         guard let screen = targetScreen ?? NSScreen.main, let window = notificationWindow else { return }
         
         let windowWidth = fixedNotificationWindowWidth
-        let windowHeight = height + 42 // Account for vertical paddings (14 top + 28 bottom)
+        let windowHeight = height + NotificationHUDLayout.topInset + NotificationHUDLayout.bottomInset
         
-        // Pinned to top-right corner. Window width is constant (400pt), origin X is 100% stationary!
+        // Fixed drawing canvas: the visible HUD remains top-right anchored while shadows have room.
         let xPos = screen.frame.maxX - windowWidth + 4
         let yPos = screen.visibleFrame.maxY - windowHeight + 4
         
@@ -774,9 +817,9 @@ class NotificationPresenter: ObservableObject {
             
             // Deterministically check cursor location against actual window frames and visible notification box
             let mouseLoc = NSEvent.mouseLocation
-            let isOverMainShelf = self.isShelfOpen && (self.shelfWindow?.frame.contains(mouseLoc) ?? false)
+            let isOverMainShelf = self.isShelfOpen && (self.mainShelfInteractiveFrame?.contains(mouseLoc) ?? false)
             let isOverSubShelf = self.activeSubmenu != nil && (self.subShelfInteractiveFrame?.contains(mouseLoc) ?? false)
-            let isOverNotif = self.visibleNotificationBoxFrame?.contains(mouseLoc) ?? false
+            let isOverNotif = self.isPointOverNotification(mouseLoc)
             
             let isOverAnyShelf = isOverMainShelf || isOverSubShelf
             self.isHoveringShelf = isOverMainShelf
@@ -952,6 +995,7 @@ private struct NotificationHUDContent: View {
     let onHoverChange: (Bool) -> Void
     let onClose: () -> Void
     let onHeightChange: (CGFloat) -> Void
+    let onRegionChange: (HUDRegion, NSRect?) -> Void
     let onExpandShelf: () -> Void
 
     var body: some View {
@@ -963,7 +1007,9 @@ private struct NotificationHUDContent: View {
             supportsQuickActions: presenter.supportsQuickActions,
             isRunningAction: presenter.isRunningAction, isShelfOpen: $presenter.isShelfOpen,
             onHoverEnter: { onHoverChange(true) }, onHoverExit: { onHoverChange(false) },
-            onClose: onClose, onHeightChange: onHeightChange, onExpandShelf: onExpandShelf
+            onClose: onClose, onHeightChange: onHeightChange, onExpandShelf: onExpandShelf,
+            onRegionChange: onRegionChange,
+            isPointerOverHandle: { presenter.pointerIsOverHandle }
         )
     }
 }

@@ -8,7 +8,7 @@
 import SwiftUI
 
 /// Stacked vertical list of Action Bars (Pills) positioned to the left of the notification HUD.
-/// Anchored to a fixed-width window (232pt) that never mutates its frame during hover interactions.
+/// Anchored to a fixed canvas that includes the maximum shadow and hover extents.
 struct ActionShelfView: View {
     let actions: [QuickAction]
     let accentColor: Color
@@ -22,9 +22,10 @@ struct ActionShelfView: View {
     @State private var hoveredActionId: String? = nil
     
     // Geometry metrics matching NotificationPresenter
-    static let paddingLeading: CGFloat = 12
-    static let paddingTop: CGFloat = 10
-    static let paddingBottom: CGFloat = 16
+    static var paddingLeading: CGFloat { max(12, ActionPillTheme.shadowDrawingInsets.leading) }
+    static var paddingTrailing: CGFloat { ActionPillTheme.shadowDrawingInsets.trailing }
+    static var paddingTop: CGFloat { max(10, ActionPillTheme.shadowDrawingInsets.top) }
+    static var paddingBottom: CGFloat { max(16, ActionPillTheme.shadowDrawingInsets.bottom) }
     static let hoverGapTrailing: CGFloat = 4
     static let pillWidth: CGFloat = 216
     static let columnGap: CGFloat = 8
@@ -41,29 +42,32 @@ struct ActionShelfView: View {
         HStack(alignment: .top, spacing: 0) {
             // Main Shelf column (stationary, locked to trailing edge)
             ShelfScrollingColumn(viewportHeight: viewportHeight, width: Self.pillWidth) {
-                VStack(alignment: .trailing, spacing: 6) {
-                    ForEach(actions) { action in
-                        let isParent = activeSubmenuId == action.id
-                        let isDimmed = isSubShelfHovered && !isParent
-                        let isHovered = hoveredActionId == action.id
+                ShelfMaterialContainer {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        ForEach(actions) { action in
+                            let isParent = activeSubmenuId == action.id
+                            let isDimmed = isSubShelfHovered && !isParent
+                            let isHovered = hoveredActionId == action.id
                     
-                        ActionPillView(
-                            action: action,
-                            accentColor: accentColor,
-                            isSubmenuActive: isParent,
-                            isHovered: isHovered,
-                            onSelect: { onActionSelected(action) },
-                            onHover: { hovering in
-                                if hovering {
-                                    hoveredActionId = action.id
-                                } else if hoveredActionId == action.id {
-                                    hoveredActionId = nil
+                            ActionPillView(
+                                action: action,
+                                accentColor: accentColor,
+                                isSubmenuActive: isParent,
+                                isHovered: isHovered,
+                                isDimmed: isDimmed,
+                                onSelect: { onActionSelected(action) },
+                                onHover: { hovering in
+                                    if hovering {
+                                        hoveredActionId = action.id
+                                    } else if hoveredActionId == action.id {
+                                        hoveredActionId = nil
+                                    }
+                                    onMainPillHover?(action, hovering)
                                 }
-                                onMainPillHover?(action, hovering)
-                            }
-                        )
-                        .opacity(isDimmed ? Theme.dimmedOpacity : Theme.activeOpacity)
-                        .animation(Theme.dimAnimation, value: isDimmed)
+                            )
+                            .opacity(isDimmed && !PlatformUIStyle.usesLiquidGlass ? Theme.dimmedOpacity : Theme.activeOpacity)
+                            .animation(Theme.dimAnimation, value: isDimmed)
+                        }
                     }
                 }
             }
@@ -87,7 +91,7 @@ struct ActionShelfView: View {
             onHoverChange?(isHovering)
         }
         .padding(.leading, Self.paddingLeading)
-        .padding(.trailing, 0)
+        .padding(.trailing, Self.paddingTrailing)
         .padding(.top, Self.paddingTop)
         .padding(.bottom, Self.paddingBottom)
         .debugZone("Shelf Window", type: .windowBoundary)
@@ -105,33 +109,37 @@ struct ActionSubShelfView: View {
     
     @State private var hoveredSubActionId: String? = nil
     
-    static let paddingLeading: CGFloat = 12
-    static let paddingTop: CGFloat = 10
-    static let paddingBottom: CGFloat = 16
+    static var paddingLeading: CGFloat { ActionShelfView.paddingLeading }
+    static var paddingTrailing: CGFloat { ActionShelfView.paddingTrailing }
+    static var paddingTop: CGFloat { ActionShelfView.paddingTop }
+    static var paddingBottom: CGFloat { ActionShelfView.paddingBottom }
     static let pillWidth: CGFloat = 216
     static let bridgeTrailing: CGFloat = 8
     
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             ShelfScrollingColumn(viewportHeight: viewportHeight, width: Self.pillWidth) {
-                VStack(alignment: .trailing, spacing: 6) {
-                    ForEach(subActions) { subAction in
-                        let isHovered = hoveredSubActionId == subAction.id
-                        ActionPillView(
-                            action: subAction,
-                            accentColor: accentColor,
-                            isHovered: isHovered,
-                            onSelect: { onActionSelected(subAction) },
-                            onHover: { hovering in
-                                if hovering {
-                                    hoveredSubActionId = subAction.id
-                                } else if hoveredSubActionId == subAction.id {
-                                    hoveredSubActionId = nil
+                ShelfMaterialContainer {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        ForEach(subActions) { subAction in
+                            let isHovered = hoveredSubActionId == subAction.id
+                            ActionPillView(
+                                action: subAction,
+                                accentColor: accentColor,
+                                isHovered: isHovered,
+                                isDimmed: isMainShelfHovered,
+                                onSelect: { onActionSelected(subAction) },
+                                onHover: { hovering in
+                                    if hovering {
+                                        hoveredSubActionId = subAction.id
+                                    } else if hoveredSubActionId == subAction.id {
+                                        hoveredSubActionId = nil
+                                    }
                                 }
-                            }
-                        )
-                        .opacity(isMainShelfHovered ? ActionShelfView.Theme.dimmedOpacity : ActionShelfView.Theme.activeOpacity)
-                        .animation(ActionShelfView.Theme.dimAnimation, value: isMainShelfHovered)
+                            )
+                            .opacity(isMainShelfHovered && !PlatformUIStyle.usesLiquidGlass ? ActionShelfView.Theme.dimmedOpacity : ActionShelfView.Theme.activeOpacity)
+                            .animation(ActionShelfView.Theme.dimAnimation, value: isMainShelfHovered)
+                        }
                     }
                 }
             }
@@ -155,7 +163,7 @@ struct ActionSubShelfView: View {
             onHoverChange?(isHovering)
         }
         .padding(.leading, Self.paddingLeading)
-        .padding(.trailing, 0)
+        .padding(.trailing, Self.paddingTrailing)
         .padding(.top, Self.paddingTop)
         .padding(.bottom, Self.paddingBottom)
         .debugZone("Sub-Shelf Window", type: .windowBoundary)

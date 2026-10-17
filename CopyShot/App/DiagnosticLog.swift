@@ -10,6 +10,8 @@ enum DiagnosticEvent: String, Sendable {
     case capturePermissionFailed = "capture_permission_failed", captureStateMissing = "capture_state_missing"
     case captureDisplayMissing = "capture_display_missing", screenshotFailed = "screenshot_failed"
     case captureEmpty = "capture_empty", captureFailed = "capture_failed", captureSucceeded = "capture_succeeded"
+    case cursorDisconnectFailed = "cursor_disconnect_failed", cursorReconnectFailed = "cursor_reconnect_failed"
+    case cursorRestoreFailed = "cursor_restore_failed"
     case prewarmFailed = "prewarm_failed", hotkeyRegistrationFailed = "hotkey_registration_failed"
     case hotkeyEventFailed = "hotkey_event_failed", launchAtLoginFailed = "launch_at_login_failed"
     case actionStarted = "action_started", actionSucceeded = "action_succeeded"

@@ -187,9 +187,9 @@ struct QuickActionsSettingsView: View {
                         }
                     }
                     .background(Color(NSColor.controlBackgroundColor).opacity(0.55))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: PlatformUIStyle.groupCornerRadius, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: PlatformUIStyle.groupCornerRadius, style: .continuous)
                             .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5)
                     )
                 }
@@ -560,7 +560,7 @@ private struct ActionDrawerDetailView: View {
                         }
                     }
                     .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous))
                 }
             } else if actionId == "translate" {
                 // Flyout Languages List with Add/Delete pattern
@@ -651,7 +651,7 @@ private struct ActionDrawerDetailView: View {
                             }
                         }
                         .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous))
                     }
                     
                     // + Add Language Menu (Centered cleanly below the languages list, without bottom-facing dropdown chevron)
@@ -675,14 +675,14 @@ private struct ActionDrawerDetailView: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3.5)
                             .background(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous)
                                     .fill(Color.accentColor.opacity(0.1))
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous)
                                     .stroke(Color.accentColor.opacity(0.25), lineWidth: 0.5)
                             )
-                            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .contentShape(RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous))
                         }
                         .menuStyle(.borderlessButton)
                         .menuIndicator(.hidden)

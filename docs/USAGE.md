@@ -45,6 +45,8 @@ Settings controls appearance, launch at login, capture modes and languages, HUD 
 
 ## Troubleshooting
 
+For macOS 26 appearance, scrollbar, and hover behavior, see [macOS compatibility](MACOS_COMPATIBILITY.md). macOS 14/15 retains its existing appearance.
+
 - **Wrong language or missing characters:** Try Accurate mode, add the relevant language, and disable language correction for code or symbols. Use inspection to compare detected regions with the OCR input.
 - **Formula model missing:** Open **Capture → LaTeX → MFR Model**. Cancel leaves other capture modes available; Retry handles interrupted downloads.
 - **Translation unavailable:** macOS 14 supports the other actions. On macOS 15+, complete any Apple language-download prompt, check language availability, and retry.

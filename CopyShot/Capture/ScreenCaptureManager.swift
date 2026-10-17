@@ -155,6 +155,7 @@ class ScreenCaptureManager: NSObject {
             hostingView.onRightMouseDown = { point, size in modeInteraction.begin(at: point, in: size) }
             hostingView.onRightMouseDragged = { point in modeInteraction.move(to: point) }
             hostingView.onRightMouseUp = { point in modeInteraction.end(at: point) }
+            hostingView.onRightMouseCancel = { modeInteraction.cancel() }
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             window.acceptsMouseMovedEvents = true
             window.alphaValue = 0.0 // Start at 0 for fade in
@@ -175,7 +176,6 @@ class ScreenCaptureManager: NSObject {
     }
 
     private func closeOverlay() {
-        CGAssociateMouseAndMouseCursorPosition(1)
         let windowsToClose = self.overlayWindows
         self.overlayWindows = []
         windowsToClose.forEach { $0.orderOut(nil) }

@@ -353,7 +353,7 @@ struct ActionSettingsIconBadge: View {
         ActionIconView(icon: icon, size: 14, isHovered: isEnabled, accentColor: .primary)
             .frame(width: 24, height: 24)
             .background(Color.primary.opacity(isEnabled ? 0.08 : 0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous))
     }
 }
 
@@ -370,8 +370,8 @@ struct CustomActionIndicator: View {
 private extension View {
     func customActionSurface() -> some View {
         background(Color(NSColor.controlBackgroundColor).opacity(0.55))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .clipShape(RoundedRectangle(cornerRadius: PlatformUIStyle.groupCornerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: PlatformUIStyle.groupCornerRadius, style: .continuous)
                 .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5))
     }
 }

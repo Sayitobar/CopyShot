@@ -40,13 +40,13 @@ struct ModeSwitcher: View {
                 let itemWidth = (geo.size.width - totalPadding - totalSpacing) / count
                 let index = CGFloat(CaptureModeDescriptor.available.firstIndex(where: { $0.id == selectedMode }) ?? 0)
                 
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: PlatformUIStyle.controlCornerRadius, style: .continuous)
                     .fill(Color.accentColor.opacity(0.15))
                     .frame(width: max(0, itemWidth), height: max(0, geo.size.height - totalPadding))
                     .offset(x: 4 + index * (itemWidth + spacing), y: 4)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.04)))
+        .background(RoundedRectangle(cornerRadius: PlatformUIStyle.groupCornerRadius, style: .continuous).fill(Color.primary.opacity(0.04)))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("\(accessibilityPrefix)-mode-switcher")
     }

@@ -145,7 +145,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     }))
                     FeedbackManager.shared.presenter.showNotification(
                         title: "Barcode Fixture", body: "36 synthetic barcode payloads", fullBody: context.text,
-                        accentColor: .adaptiveGreen, duration: 120, supportsQuickActions: true, actionContext: context
+                        accentColor: .adaptiveGreen, targetScreen: NSScreen.screens.first,
+                        duration: 120, supportsQuickActions: true, actionContext: context
                     )
                 }
                 #else
