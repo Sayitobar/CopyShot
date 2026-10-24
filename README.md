@@ -21,7 +21,7 @@
 </p>
 
 <div align="center">
-  <video src="https://github.com/Sayitobar/CopyShot/blob/main/.github/CopyShot_Trailer.mp4" width="500" alt="CopyShot 2.0 Trailer" controls><br/>
+  <video src="https://github.com/user-attachments/assets/a164d606-bcf8-41fa-9536-eb90fbb8c6c8" width="500" alt="CopyShot 2.0 Trailer" controls><br/>
 </div>
 
 
