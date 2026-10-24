@@ -17,21 +17,20 @@
 <br/>
 
 <p align="center">
-  Select → extract → clipboard. One keystroke (⌘⇧C).<br>
-  Works seamlessly across every display, resource-friendly, and 100% open source.
+  Capture → process → clipboard. One keystroke (⌘⇧C).
 </p>
 
-<br/>
 <div align="center">
-  <img src=".github/screenshot.png" width="500" alt="CopyShot 2.0 Capture mode settings"/><br/>
+  <video src=".github/CopyShot Trailer.mp4" width="500" alt="CopyShot 2.0 Trailer" controls><br/>
 </div>
+
 
 <br/>
 
 <p align="center">
   <strong>CopyShot is the OCR tool for people who want to control what's happening.</strong><br>
   Offers transparent preprocessing, visual inspection, and top-notch configurability.<br>
-  Local recognition. No API keys. Customizable pipeline.
+  Local recognition, no API keys and a customizable pipeline.
 </p>
 
 
@@ -52,6 +51,10 @@
 | **Privacy** | Local recognition only. No cloud or API usage. Your screen contents are processed entirely on-device and never leave your Mac. |
 
 *\*Note: On-device translation requires macOS 15+ and a pre-installed language pack from Apple. Other Quick Actions are fully supported on macOS 14 (Sonoma)+.*
+
+<div align="center">
+  <img src=".github/screenshot.png" width="500" alt="CopyShot 2.0 Capture mode settings"/><br/>
+</div>
 
 ### Multimodal Capture Modes
 
