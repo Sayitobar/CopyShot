@@ -21,7 +21,7 @@
 </p>
 
 <div align="center">
-  <video src=".github/CopyShot Trailer.mp4" width="500" alt="CopyShot 2.0 Trailer" controls><br/>
+  <video src=".github/CopyShot_Trailer.mp4" width="500" alt="CopyShot 2.0 Trailer" controls><br/>
 </div>
 
 
